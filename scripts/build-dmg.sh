@@ -30,13 +30,22 @@ notarize() {  # 제출 → 결과 대기 → 실패면 로그 출력
   echo "공증 통과: $id"
 }
 
+staple() {  # 공증 티켓을 Apple CDN에서 받아 붙인다. 일시적 네트워크 오류(stapler 오류 68 등)는 몇 번 다시 시도한다
+  local i
+  for i in 1 2 3 4 5; do
+    xcrun stapler staple "$1" && return 0
+    echo "스테이플 실패($i/5) — $((i * 15))초 뒤 다시 시도"; sleep $((i * 15))
+  done
+  echo "스테이플 실패: $1"; return 1
+}
+
 # 1) 앱 공증 (zip으로 제출) → 스테이플
 ZIP="$REPO_ROOT/dist/AskProject-notarize.zip"
 rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
 notarize "$ZIP"
 rm -f "$ZIP"
-xcrun stapler staple "$APP"
+staple "$APP"
 
 # 2) DMG: 앱 + 응용 프로그램 폴더 바로 가기
 STAGE="$(mktemp -d)"
@@ -47,7 +56,7 @@ hdiutil create -volname "AskProject" -srcfolder "$STAGE" -fs HFS+ -format ULFO -
 rm -rf "$STAGE"
 codesign --force --timestamp --sign "$SIGN_ID" "$DMG"
 notarize "$DMG"
-xcrun stapler staple "$DMG"
+staple "$DMG"
 
 # 3) 확인: Gatekeeper가 다운로드한 것처럼 평가
 spctl -a -vv -t exec "$APP"
