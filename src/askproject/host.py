@@ -174,7 +174,7 @@ def restart(name: str) -> bool:
 def job_states(log_dir: Path) -> dict[str, dict]:
     """작업별 상태. state: running | waiting(재시작 대기·예약) | off"""
     out = {}
-    for name in ("bot", "console", "backup"):
+    for name in ("bot", "console", "backup", "tunnel"):  # tunnel: 팀 공유를 켰을 때만 등록된다
         label = f"{LABEL_PREFIX}.{name}"
         r = _launchctl("print", f"{_domain()}/{label}")
         pid, last_exit = None, None

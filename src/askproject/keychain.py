@@ -21,6 +21,7 @@ FIELDS: dict[str, str] = {
     "slack_bot_token": "ASKPROJECT_SLACK_BOT_TOKEN",
     "slack_app_token": "ASKPROJECT_SLACK_APP_TOKEN",
     "notion_token": "ASKPROJECT_NOTION_TOKEN",
+    "cloudflare_tunnel_token": "ASKPROJECT_CLOUDFLARE_TUNNEL_TOKEN",
 }
 _SAFE = re.compile(r"^[\x21-\x7e]+$")  # 공백·따옴표·역슬래시 없는 출력 가능 ASCII (토큰·키 형식)
 

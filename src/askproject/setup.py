@@ -2,7 +2,7 @@
 
 - manifest-url   슬랙 앱 만들기 링크(매니페스트를 미리 채움)
 - pat-url        GitHub fine-grained PAT 만들기 링크(이름·설명·만료·contents=read를 미리 채움)
-- check slack|github|claude   저장된 값으로 연결 확인 → {"ok", "detail", "step"}
+- check slack|github|claude|tunnel   저장된 값으로 연결 확인(tunnel: 웹 콘솔 팀 공유, askproject.tunnel) → {"ok", "detail", "step"}
 - repos          PAT로 읽을 수 있는 레포 목록(선택용)
 - channels       봇이 들어가 있는 공개 채널 목록(허용 목록 선택용)
 """
@@ -141,7 +141,9 @@ def run(action: str, target: str | None = None, owner: str | None = None) -> dic
         return {"url": pat_url(owner)}
     s = Settings()
     if action == "check":
-        fn = {"slack": check_slack, "github": check_github, "claude": check_claude}[target or ""]
+        from askproject.tunnel import check as check_tunnel
+
+        fn = {"slack": check_slack, "github": check_github, "claude": check_claude, "tunnel": check_tunnel}[target or ""]
         try:
             return fn(s)
         except Exception as exc:

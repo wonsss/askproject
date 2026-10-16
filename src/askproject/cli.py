@@ -536,6 +536,7 @@ def main() -> None:
     pv.add_argument("mode", nargs="?", choices=["api", "subscription"])
     pw = sub.add_parser("power", help="맥북 절전 모드 확인·전환 (default|lid-open|lid-closed)")
     pw.add_argument("mode", nargs="?", choices=["default", "lid-open", "lid-closed"])
+    sub.add_parser("tunnel", help="웹 콘솔 팀 공유: Cloudflare 터널(대시보드 토큰) 실행 — launchd 작업용")
     con = sub.add_parser("console", help="웹 콘솔 (로컬 전용, 읽기 전용)")
     con.add_argument("--port", type=int, default=8787)
     dr = sub.add_parser("doctor")
@@ -543,7 +544,7 @@ def main() -> None:
     dr.add_argument("--json", action="store_true", help="앱용 JSON (실패 항목에 고칠 마법사 단계 포함)")
     su = sub.add_parser("setup", help="첫 실행 마법사용 점검·조회 (JSON)")
     su.add_argument("action", choices=["manifest-url", "pat-url", "check", "repos", "channels"])
-    su.add_argument("target", nargs="?", choices=["slack", "github", "claude"])
+    su.add_argument("target", nargs="?", choices=["slack", "github", "claude", "tunnel"])
     su.add_argument("--owner", help="pat-url: 레포 소유 조직(target_name)")
     args = parser.parse_args()
     _prepare(args.cmd)
@@ -582,6 +583,11 @@ def main() -> None:
         cmd_power(args.mode)
     elif args.cmd == "console":
         cmd_console(args.port)
+    elif args.cmd == "tunnel":
+        from askproject import tunnel
+        from askproject.settings import Settings
+
+        sys.exit(tunnel.run(Settings()))
     elif args.cmd == "stats":
         cmd_stats()
     elif args.cmd == "nightly":

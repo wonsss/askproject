@@ -18,7 +18,7 @@ from askproject import paths
 
 SECRET_RE = re.compile(
     r"(xox[abposr]-[A-Za-z0-9-]+|xapp-[A-Za-z0-9-]+|sk-ant-[A-Za-z0-9_-]+|github_pat_[A-Za-z0-9_]+|gh[pousr]_[A-Za-z0-9]+"
-    r"|ntn_[A-Za-z0-9]+|secret_[A-Za-z0-9]+|(?<=key=)[A-Za-z0-9_-]{20,}|(?<=Bearer )[A-Za-z0-9._-]+)")
+    r"|ntn_[A-Za-z0-9]+|secret_[A-Za-z0-9]+|eyJ[A-Za-z0-9+/=_.-]{20,}|(?<=key=)[A-Za-z0-9_-]{20,}|(?<=Bearer )[A-Za-z0-9._-]+)")
 TAIL_LINES = 400
 
 

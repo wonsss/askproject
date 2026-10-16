@@ -94,6 +94,7 @@ class Settings(BaseSettings):
     console_public_host: str | None = None  # 예: askproject.example.com
     cf_access_team_domain: str | None = None  # 예: myteam.cloudflareaccess.com
     cf_access_aud: str | None = None  # Access 애플리케이션의 Application Audience (AUD) 태그
+    cloudflare_tunnel_token: SecretStr | None = None  # 대시보드 터널 토큰(팀 공유, askproject tunnel). 앱은 Keychain
 
     # 단순 호출 비용 추정용 단가 (USD / 100만 토큰). 현재 가격표에 맞게 설정
 

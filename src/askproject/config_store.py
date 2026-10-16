@@ -51,6 +51,10 @@ class SettingsPatch(BaseModel):
     slack_source_channels: str | None = None
     slack_source_days: int | None = Field(default=None, ge=1, le=365)
     notion_root_page_id: str | None = None
+    # 팀 공유(웹 콘솔 Cloudflare Tunnel + Access). 셋이 다 있어야 콘솔이 공개 요청을 받는다
+    console_public_host: str | None = None
+    cf_access_team_domain: str | None = None
+    cf_access_aud: str | None = None
 
     @field_validator("allowed_channels", "slack_source_channels")
     @classmethod
@@ -65,12 +69,29 @@ class SettingsPatch(BaseModel):
         return v.strip() if v is not None else v
 
 
+    @field_validator("console_public_host", "cf_access_team_domain", "cf_access_aud")
+    @classmethod
+    def _share(cls, v: str | None, info) -> str | None:
+        if not v:
+            return v
+        from askproject import tunnel
+
+        v = v.strip().lower().removeprefix("https://").rstrip("/")
+        rule, hint = {"console_public_host": (tunnel.HOSTNAME, "주소는 askproject.example.com처럼 호스트 이름만 넣어요"),
+                      "cf_access_team_domain": (tunnel.TEAM_DOMAIN, "팀 도메인은 <팀 이름>.cloudflareaccess.com 형식이에요"),
+                      "cf_access_aud": (tunnel.AUD, "AUD 태그는 64자리 16진수예요 (Access 앱 → Overview)")}[info.field_name]
+        if not rule.match(v):
+            raise ValueError(hint)
+        return v
+
+
 SECRET_PREFIX = {
     "ANTHROPIC_API_KEY": "sk-ant-",
     "ASKPROJECT_GITHUB_TOKEN": "github_pat_",
     "ASKPROJECT_SLACK_BOT_TOKEN": "xoxb-",
     "ASKPROJECT_SLACK_APP_TOKEN": "xapp-",
     "ASKPROJECT_NOTION_TOKEN": None,
+    "ASKPROJECT_CLOUDFLARE_TUNNEL_TOKEN": "eyJ",
 }
 
 
@@ -109,6 +130,10 @@ class ConfigPatch(BaseModel):
             ok_prefixes = (prefix, "ghp_") if key == "ASKPROJECT_GITHUB_TOKEN" else (prefix,)
             if value and prefix and not value.startswith(ok_prefixes):
                 raise ValueError(f"{key}는 '{prefix}'로 시작해야 해요")
+            if value and key == "ASKPROJECT_CLOUDFLARE_TUNNEL_TOKEN":
+                from askproject import tunnel
+
+                tunnel.parse_token(value)
         return v
 
 
