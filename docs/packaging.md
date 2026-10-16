@@ -165,9 +165,21 @@ xcrun notarytool store-credentials askproject --apple-id <Apple ID> --team-id AE
 | 워크플로 | 언제 | 하는 일 |
 |---|---|---|
 | `.github/workflows/test.yml` | main push·PR | 리눅스에서 `uv run pytest` (비밀값·API 비용 없음) |
-| `.github/workflows/release.yml` | `v*` 태그 push | macos-15(arm64)에서 테스트 → 임시 Keychain에 인증서 → `build-dmg.sh`(API 키로 공증) → appcast 서명 → GitHub Release에 DMG·`.sha256`·`appcast.xml` 첨부 → 비밀값 정리 |
+| `.github/workflows/release.yml` | 버튼 실행 또는 `v*` 태그 push | 준비(버전·main·중복 확인, 버튼이면 버전 올려 커밋·태그) → macos-15(arm64)에서 테스트 → 임시 Keychain에 인증서 → `build-dmg.sh`(API 키로 공증) → appcast 서명 → GitHub Release에 DMG·`.sha256`·`appcast.xml` 첨부 → 비밀값 정리 |
 
-릴리스 순서: `pyproject.toml`의 `version`을 올려 커밋 → `git tag v<버전>` → `git push origin v<버전>`. 태그와 version이 다르면 실패한다. 빌드 번호(CFBundleVersion)는 날짜·시각이라 늘 커진다(Sparkle 비교 기준).
+### 릴리스하는 법 (셋 중 아무거나)
+
+| 방법 | 어떻게 | 언제 |
+|---|---|---|
+| **GitHub 버튼** (가장 쉬움) | Actions → release → Run workflow → `patch`(기본)·`minor`·`major` 또는 `1.2.3` → Run | 터미널 없이. 봇이 버전을 올려 main에 커밋하고 태그를 붙인 뒤 빌드한다 |
+| **터미널 한 줄** | `bash scripts/release.sh` (patch) · `bash scripts/release.sh minor` | 이 맥에서. 변경 내용을 보여 주고 확인을 받은 뒤 커밋·태그·push(`-y`면 묻지 않음) |
+| 직접 태그 | 버전을 맞춰 커밋한 뒤 `git tag v1.2.3 && git push origin v1.2.3` | 이미 버전을 올려 둔 경우 |
+
+- 버전은 네 곳(pyproject·`__version__`·uv.lock·개발 앱 Info.plist)에 적혀 있다. `scripts/bump_version.py`가 한 번에 맞추고, 테스트가 어긋나면 실패시킨다. 손으로 고치지 않는다.
+- 자동으로 막는 것: 태그와 코드 버전이 다름, 태그 커밋이 main에 없음, 같은 버전의 태그·Release가 이미 있음, 버전을 낮춤, 릴리스 두 개가 동시에 돎.
+- **main 보호 규칙**을 켜 두면 버튼 실행의 봇 커밋 push가 막힐 수 있다. 그때는 규칙에 github-actions 우회를 허용하거나 터미널 방식을 쓴다.
+- 실패하면 Actions 실행 화면 요약에 원인 한 줄이 남는다. 공증 실패는 로그에 Apple의 상세 사유(JSON)가 찍힌다. 버튼 실행이 빌드 단계에서 실패하면 버전 커밋·태그는 이미 올라가 있으므로, 고친 뒤 그 태그를 지우고(`git push origin :refs/tags/v1.2.3`) 다시 돌리거나 다음 patch로 낸다.
+- 빌드 번호(CFBundleVersion)는 날짜·시각이라 늘 커진다(Sparkle 비교 기준).
 
 ### 등록할 Secrets (Settings → Secrets and variables → Actions)
 

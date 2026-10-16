@@ -34,7 +34,8 @@ uv run askproject paths|config get|status --json      # 앱↔백엔드 계약(J
 uv run askproject setup manifest-url|pat-url|check <slack|github|claude>|repos|channels   # 마법사용
 bash scripts/build-app.sh            # 배포 앱(백엔드 내장 + Developer ID 서명) → dist/AskProject.app
 NOTARY_PROFILE=askproject bash scripts/build-dmg.sh   # 공증 + DMG
-git tag v<버전> && git push origin v<버전>   # CI: .github/workflows/release.yml이 DMG 빌드·공증·Release (Secrets는 docs/packaging.md)
+bash scripts/release.sh [patch|minor|major|1.2.3]   # 버전 올리기·커밋·태그·push → CI가 DMG 빌드·공증·Release (GitHub Actions 'Run workflow' 버튼도 같음, Secrets는 docs/packaging.md)
+python3 scripts/bump_version.py --check            # 버전 네 곳 일치 확인 (손으로 고치지 않는다)
 uv run pytest
 ```
 

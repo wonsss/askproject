@@ -1,34 +1,90 @@
-# 배포: v* 태그를 push하면 DMG를 빌드·서명·공증해 GitHub Release에 올린다.
-#   git tag v0.1.1 && git push origin v0.1.1     (pyproject.toml의 version과 같아야 한다)
+# 배포: DMG를 빌드·서명·공증해 GitHub Release에 올린다. 시작하는 법은 셋 중 하나.
+#   1) GitHub → Actions → release → Run workflow → patch/minor/major 또는 1.2.3   (버전 올리기·커밋·태그까지 자동)
+#   2) bash scripts/release.sh [patch|minor|major|1.2.3]                         (이 맥에서 같은 일을 하고 태그 push)
+#   3) 직접 태그 push: git tag v0.1.1 && git push origin v0.1.1                  (pyproject version과 같아야 함)
 # 필요한 Secrets·Variables는 docs/packaging.md의 "릴리스 CI" 절.
 name: release
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "올릴 버전: patch(0.1.0→0.1.1) · minor · major · 또는 정확한 버전(1.2.3)"
+        required: true
+        default: patch
 
 permissions:
   contents: write  # Release 만들기
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release  # 릴리스는 한 번에 하나씩(버전 올리기가 겹치지 않게)
   cancel-in-progress: false
 
 jobs:
+  # 어떤 버전·커밋을 내보낼지 정하고 확인한다. 버튼 실행이면 버전을 올려 main에 커밋하고 태그를 붙인다.
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.out.outputs.tag }}
+      version: ${{ steps.out.outputs.version }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+          fetch-depth: 0
+
+      - name: 버전 올리기·커밋·태그 (버튼 실행)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          [ "$GITHUB_REF" = "refs/heads/main" ] || { echo "::error::main 브랜치에서 실행하세요 (지금 $GITHUB_REF)"; exit 1; }
+          python3 scripts/bump_version.py --check >/dev/null
+          new="$(python3 scripts/bump_version.py "$BUMP")"
+          if git rev-parse -q --verify "refs/tags/v$new" >/dev/null; then echo "::error::태그 v$new가 이미 있어요"; exit 1; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml uv.lock src/askproject/__init__.py macos/AskProjectBar/Info.plist
+          git commit -m "release: v$new"
+          git tag -a "v$new" -m "AskProject $new"
+          # 둘 다 올라가거나 둘 다 안 올라간다. main 보호 규칙이 봇 push를 막으면 여기서 실패한다(docs/packaging.md)
+          git push --atomic origin HEAD:main "v$new"
+          echo "TAG=v$new" >> "$GITHUB_ENV"
+
+      - name: 태그 확인 (태그 push)
+        if: github.event_name == 'push'
+        run: |
+          echo "TAG=$GITHUB_REF_NAME" >> "$GITHUB_ENV"
+          git fetch -q origin main
+          git merge-base --is-ancestor HEAD origin/main \
+            || { echo "::error::태그 커밋이 main에 없어요 — main에 들어간 커밋에만 릴리스 태그를 붙이세요"; exit 1; }
+
+      - name: 버전·중복 확인
+        id: out
+        run: |
+          version="$(python3 scripts/bump_version.py --check)"
+          [ "v$version" = "$TAG" ] || { echo "::error::태그 $TAG ≠ 코드의 버전 $version (scripts/release.sh를 쓰면 맞춰 줘요)"; exit 1; }
+          if gh release view "$TAG" >/dev/null 2>&1; then echo "::error::Release $TAG가 이미 있어요"; exit 1; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "### 릴리스 $TAG" >> "$GITHUB_STEP_SUMMARY"
+
   dmg:
+    needs: prepare
     runs-on: macos-15  # arm64 (앱은 arm64 전용)
     timeout-minutes: 60
     env:
-      TAG: ${{ github.ref_name }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      VERSION: ${{ needs.prepare.outputs.version }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
       - uses: astral-sh/setup-uv@v10.3.0
-
-      - name: 태그와 pyproject 버전 확인
-        run: |
-          version="$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml | head -1)"
-          [ "v$version" = "$TAG" ] || { echo "::error::태그 $TAG ≠ pyproject version $version"; exit 1; }
-          echo "VERSION=$version" >> "$GITHUB_ENV"
 
       - name: 테스트
         run: |
@@ -88,6 +144,8 @@ jobs:
           shasum -a 256 "dist/AskProject-$VERSION.dmg" > "dist/AskProject-$VERSION.dmg.sha256"
           assets+=("dist/AskProject-$VERSION.dmg.sha256")
           gh release create "$TAG" "${assets[@]}" --title "AskProject $VERSION" --generate-notes --verify-tag
+          url="$(gh release view "$TAG" --json url -q .url)"
+          { echo "✅ [$TAG 릴리스]($url) — DMG $(du -h "dist/AskProject-$VERSION.dmg" | cut -f1)"; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 비밀값 정리
         if: always()

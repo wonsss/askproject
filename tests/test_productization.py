@@ -373,3 +373,31 @@ def test_console_public_host_requires_valid_cloudflare_access_jwt(tmp_path):
     assert pub.get("/", headers={"cf-access-jwt-assertion": token()}).status_code == 200
     local = TestClient(app, base_url="http://127.0.0.1:8787")
     assert local.get("/", headers={"cf-access-jwt-assertion": token()}).status_code == 401  # 로컬은 여전히 토큰
+
+
+def test_version_is_the_same_everywhere():
+    """릴리스는 pyproject 버전으로 태그를 붙인다. 앱·백엔드·lock이 다른 버전을 말하면 안 된다."""
+    import subprocess
+    import sys as _sys
+    from pathlib import Path
+
+    from askproject import __version__
+
+    root = Path(__file__).resolve().parent.parent
+    r = subprocess.run([_sys.executable, str(root / "scripts/bump_version.py"), "--check"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == __version__
+
+
+def test_bump_version_rules(tmp_path, monkeypatch):
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location("bump", Path(__file__).resolve().parent.parent / "scripts/bump_version.py")
+    bump = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bump)
+    assert bump.next_version("0.1.9", "patch") == "0.1.10"
+    assert bump.next_version("0.1.9", "minor") == "0.2.0" and bump.next_version("0.1.9", "major") == "1.0.0"
+    assert bump.next_version("0.1.9", "2.0.0") == "2.0.0"
+    with pytest.raises(SystemExit):
+        bump.next_version("0.1.9", "v2")
