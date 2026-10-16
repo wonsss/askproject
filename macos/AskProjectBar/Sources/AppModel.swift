@@ -229,6 +229,13 @@ final class AppModel: ObservableObject {
         NSWorkspace.shared.open(URL(fileURLWithPath: dir))
     }
 
+    /// 백업 폴더(`paths --json`의 backup_dir). 아직 백업이 없어 폴더가 없으면 만들어서 연다.
+    func openBackups() {
+        let dir = paths?.backup_dir ?? Backend.devRepo + "/backups"
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(URL(fileURLWithPath: dir))
+    }
+
     private func notify(_ title: String, _ body: String) {
         let c = UNMutableNotificationContent()
         c.title = title

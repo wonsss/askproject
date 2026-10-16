@@ -198,6 +198,12 @@ struct PanelView: View {
                      ?? "백업 없음")
                     .font(.caption)
                 Spacer()
+                Button {
+                    model.openBackups()
+                } label: {
+                    Image(systemName: "folder")
+                }
+                .controlSize(.small).help("백업 폴더 열기")
                 Button("지금 백업") { model.backupNow() }.controlSize(.small).disabled(model.busy != nil)
             }
             HStack(spacing: 6) {
