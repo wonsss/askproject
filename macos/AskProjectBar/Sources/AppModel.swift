@@ -14,6 +14,7 @@ final class AppModel: ObservableObject {
     @Published var message: String?
     @Published var claude: ClaudeCheck?
     @Published var consoleUp = false
+    @Published var consolePortTaken = false  // 콘솔 포트에 다른 프로그램이 응답함
 
     private var timer: Timer?
     private var userToggled = false
@@ -196,21 +197,39 @@ final class AppModel: ObservableObject {
     }
 
     private func probeConsole() {
-        Task { consoleUp = await consoleReachable() }
+        Task { await updateConsoleState() }
     }
 
-    private func consoleReachable() async -> Bool {
-        guard let base = status?.console_url, let url = URL(string: base) else { return false }
+    enum ConsoleProbe { case up, down, portTaken }
+
+    /// 응답이 와도 콘솔의 식별 헤더(X-AskProject-Console)가 없으면 같은 포트를 다른 프로그램이 쓰는 것이다.
+    private func probeConsoleState() async -> ConsoleProbe {
+        guard let base = status?.console_url, let url = URL(string: base) else { return .down }
         var req = URLRequest(url: url)
         req.timeoutInterval = 1.5
-        return (try? await URLSession.shared.data(for: req)) != nil  // 401도 응답이다(켜져 있음)
+        guard let (_, resp) = try? await URLSession.shared.data(for: req) else { return .down }
+        let ours = (resp as? HTTPURLResponse)?.value(forHTTPHeaderField: "X-AskProject-Console") != nil
+        return ours ? .up : .portTaken  // 401도 콘솔의 응답이다(켜져 있음)
+    }
+
+    @discardableResult
+    private func updateConsoleState() async -> ConsoleProbe {
+        let state = await probeConsoleState()
+        consoleUp = state == .up
+        consolePortTaken = state == .portTaken
+        return state
     }
 
     /// 콘솔은 실행마다 새 키를 쓴다. 키를 붙여 열면 콘솔이 쿠키로 바꾸고 주소에서 지운다.
     func openConsole(_ path: String = "/") {
         Task {
-            guard await consoleReachable(), let s = status else {
-                consoleUp = false
+            let state = await updateConsoleState()
+            if state == .portTaken {
+                let port = status.flatMap { URL(string: $0.console_url)?.port }.map(String.init) ?? "8787"
+                message = "\(port) 포트를 다른 프로그램이 쓰고 있어 웹 콘솔이 뜨지 못했어요. 그 프로그램을 끈 뒤 콘솔을 다시 켜세요."
+                return
+            }
+            guard state == .up, let s = status else {
                 message = "웹 콘솔이 꺼져 있어요. '켜기'로 켜거나 잠시 뒤 다시 시도하세요."
                 return
             }

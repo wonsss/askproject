@@ -231,7 +231,7 @@ def test_console_requires_host_and_session_token(tmp_path):
     from starlette.testclient import TestClient
 
     from askproject.console.data import ConsoleData
-    from askproject.console.server import COOKIE, create_app
+    from askproject.console.server import COOKIE, IDENTITY_HEADER, create_app
     from askproject.store.db import Store
 
     Store(tmp_path / "db.sqlite3")
@@ -239,6 +239,7 @@ def test_console_requires_host_and_session_token(tmp_path):
     app = create_app(data, allowed_hosts={"127.0.0.1:8787"}, token="t" * 40)
     c = TestClient(app, base_url="http://127.0.0.1:8787", follow_redirects=False)
     assert c.get("/").status_code == 401  # 토큰 없음
+    assert c.get("/").headers[IDENTITY_HEADER] == "1"  # 막힌 응답에도 식별 헤더 — 앱이 콘솔이 켜졌는지 본다
     assert c.get("/?key=wrong").status_code == 401
     r = c.get("/search?q=%ED%91%B8%EC%8B%9C&key=" + "t" * 40)
     assert r.status_code == 303 and r.headers["location"] == "/search?q=%ED%91%B8%EC%8B%9C"  # 토큰은 주소에서 지운다
@@ -248,6 +249,7 @@ def test_console_requires_host_and_session_token(tmp_path):
     evil = TestClient(app, base_url="http://evil.example:8787")  # DNS rebinding
     evil.cookies.set(COOKIE, "t" * 40)
     assert evil.get("/").status_code == 421
+    assert evil.get("/").headers[IDENTITY_HEADER] == "1"
 
 
 class FakeSlack:

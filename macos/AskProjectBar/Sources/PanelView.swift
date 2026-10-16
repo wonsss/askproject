@@ -28,7 +28,8 @@ struct StatCard: View {
 struct JobRow: View {
     let name: String
     let job: JobState?
-    var up: Bool? = nil  // 웹 콘솔만: 실제 HTTP 응답 여부
+    var up: Bool? = nil  // 웹 콘솔만: 콘솔이 실제로 응답하는지(식별 헤더 확인)
+    var portTaken = false  // 웹 콘솔만: 같은 포트에 다른 프로그램이 응답함
 
     var body: some View {
         HStack(spacing: 6) {
@@ -40,6 +41,7 @@ struct JobRow: View {
     }
 
     private var color: Color {
+        if portTaken { return .orange }
         if let up { return up ? .green : (job?.state == "running" ? .orange : .gray) }
         switch job?.state {
         case "running": return .green
@@ -49,6 +51,7 @@ struct JobRow: View {
     }
 
     private var text: String {
+        if portTaken { return "포트를 다른 프로그램이 사용 중" }
         if let up {
             if up { return "실행 중" }
             return job?.state == "running" ? "응답 없음" : "꺼짐"
@@ -89,7 +92,7 @@ struct PanelView: View {
                     ForEach(model.warnings, id: \.self) { WarningBanner(text: $0) }
                     VStack(spacing: 4) {
                         JobRow(name: "봇", job: s.jobs["bot"])
-                        JobRow(name: "웹 콘솔", job: s.jobs["console"], up: model.consoleUp)
+                        JobRow(name: "웹 콘솔", job: s.jobs["console"], up: model.consoleUp, portTaken: model.consolePortTaken)
                         JobRow(name: "백업", job: s.jobs["backup"])
                         if let t = s.jobs["tunnel"], t.state != "off" { JobRow(name: "팀 공유", job: t) }
                     }

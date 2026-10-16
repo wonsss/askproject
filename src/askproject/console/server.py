@@ -38,6 +38,17 @@ class SecurityHeaders(BaseHTTPMiddleware):
         return response
 
 
+class ConsoleIdentity(BaseHTTPMiddleware):
+    """모든 응답(가드가 막은 401·421 포함)에 붙는 식별 헤더. 앱은 포트가 열렸는지가 아니라 이 헤더로 콘솔이 켜졌는지 본다
+    — 같은 포트를 다른 프로그램이 쓰고 있으면 '실행 중'으로 착각하지 않게."""
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers[IDENTITY_HEADER] = "1"
+        return response
+
+
+IDENTITY_HEADER = "X-AskProject-Console"
 COOKIE = "askproject_console"
 CF_JWT_HEADER = "cf-access-jwt-assertion"
 
@@ -152,5 +163,4 @@ def create_app(data: ConsoleData, allowed_hosts: set[str] | None = None, token: 
         Route("/eval", evals), Route("/eval/compare", eval_compare), Route("/eval/{name}", eval_run),
     ]
     guard = Middleware(AccessGuard, allowed_hosts=allowed_hosts, token=token, public_host=public_host, cf_access=cf_access)
-    return Starlette(routes=routes, middleware=[guard,
-                                                Middleware(SecurityHeaders)])
+    return Starlette(routes=routes, middleware=[Middleware(ConsoleIdentity), guard, Middleware(SecurityHeaders)])
