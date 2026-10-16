@@ -6,7 +6,7 @@
   askproject serve                            슬랙 봇 실행 (주기적 동기화 포함)
   askproject stats                            감사 로그 요약
   askproject console [--port 8787]            웹 콘솔 (로컬 전용, 읽기 전용, API 비용 없음)
-  askproject host on|off|status               맥북 호스트 모드 (봇·콘솔 상시 실행, 잠자기 방지, 매일 백업)
+  askproject host on|off|status|restart       맥북 호스트 모드 (봇·콘솔 상시 실행, 잠자기 방지, 매일 백업)
   askproject provider [api|subscription]      LLM 인증 경로 확인·전환 (subscription=로컬 claude CLI 구독)
   askproject power [default|lid-open|lid-closed]  맥북 절전 모드 확인·전환 (덮개 닫힘은 전원 연결 시만)
   askproject backup [--dest DIR]              감사 로그 백업 (+ ASKPROJECT_BACKUP_UPLOAD_CMD로 서버 밖 복사)
@@ -430,7 +430,7 @@ def cmd_power(mode: str | None) -> None:
         print("⚠️ 맥이 잠들면 봇도 멈춥니다 — 상시 운영이면 lid-open 이상을 권해요.")
 
 
-def cmd_host(action: str, port: int) -> None:
+def cmd_host(action: str, port: int, job: str = "bot") -> None:
     """맥북 호스트 모드 (launchd). API 키 인증 그대로, Claude 비용은 질문을 받을 때만 든다."""
     from askproject import host
     from askproject.settings import Settings
@@ -447,6 +447,18 @@ def cmd_host(action: str, port: int) -> None:
         print(f"절전 모드: {s.power_mode} ({POWER_LABELS[s.power_mode]}) — 바꾸려면 askproject power { '|'.join(host.POWER_MODES) }")
         if s.power_mode != "default":
             print("켜져 있는 동안 맥북은 잠자기에 들어가지 않아요(전원 연결 권장). 끌 때: askproject host off")
+    elif action == "restart":
+        if paths.app_mode():  # 앱 번들 작업은 번들 경로를 쓰므로 옮겨 갈 일이 없다
+            ok = host.restart(job)
+            print(f"{job} 재시작했어요" if ok else f"{job}이(가) 등록돼 있지 않아요")
+            return
+        state, registered = host.restart_from(job, Path.cwd())
+        if state == "other_repo":
+            sys.exit(f"{job}은(는) 다른 체크아웃({registered})에서 실행 중이라 재시작하지 않았어요. "
+                     f"이 레포로 옮기려면 여기서 askproject host on을 직접 실행하세요.")
+        if state == "failed":
+            sys.exit(f"{job} 재시작 실패 — askproject host status로 확인하세요")
+        print(f"{job} 재시작했어요" if state == "restarted" else f"{job}이(가) 등록돼 있지 않아요 — askproject host on으로 켜세요")
     elif action == "off":
         names = host.off()
         print(f"껐어요: {', '.join(names) or '실행 중인 것 없음'} · 잠자기 방지도 풀렸어요")
@@ -530,7 +542,8 @@ def main() -> None:
     sta.add_argument("--json", action="store_true")
     sta.add_argument("--check-claude", action="store_true", help="1토큰 호출로 키·크레딧 확인 (약 $0.00001)")
     ho = sub.add_parser("host", help="맥북 호스트 모드: 봇·콘솔 상시 실행, 잠자기 방지, 매일 백업 (macOS)")
-    ho.add_argument("action", choices=["on", "off", "status"])
+    ho.add_argument("action", choices=["on", "off", "status", "restart"])
+    ho.add_argument("job", nargs="?", default="bot", choices=["bot", "console", "backup"], help="restart 대상 (기본 bot)")
     ho.add_argument("--port", type=int, default=8787)
     pv = sub.add_parser("provider", help="LLM 인증 경로 확인·전환 (api=API 키, subscription=로컬 claude CLI 구독)")
     pv.add_argument("mode", nargs="?", choices=["api", "subscription"])
@@ -577,7 +590,7 @@ def main() -> None:
     elif args.cmd == "status":
         cmd_status(args.json, args.check_claude)
     elif args.cmd == "host":
-        cmd_host(args.action, args.port)
+        cmd_host(args.action, args.port, args.job)
     elif args.cmd == "provider":
         cmd_provider(args.mode)
     elif args.cmd == "power":

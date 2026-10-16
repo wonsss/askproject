@@ -171,6 +171,29 @@ def restart(name: str) -> bool:
     return _launchctl("kickstart", "-k", f"{_domain()}/{label}").returncode == 0
 
 
+def registered_repo(name: str) -> Path | None:
+    """개발 모드로 등록된 plist의 WorkingDirectory(작업이 코드·.env·data를 읽는 레포). plist가 없으면 None."""
+    p = _agents_dir() / f"{LABEL_PREFIX}.{name}.plist"
+    try:
+        wd = plistlib.loads(p.read_bytes()).get("WorkingDirectory")
+    except Exception:
+        return None
+    return Path(wd) if wd else None
+
+
+def restart_from(name: str, repo: Path) -> tuple[str, Path | None]:
+    """설정을 바꾼 개발 앱이 부르는 재시작. `on`처럼 plist를 다시 쓰지 않고 등록된 작업만 kickstart한다.
+    등록된 plist가 다른 체크아웃을 가리키면 건드리지 않는다 — 실행 중인 봇이 부른 쪽(예: worktree)의
+    코드·.env·data로 옮겨 가 감사 로그가 다른 DB에 쌓이지 않게.
+    반환: (restarted | not_loaded | other_repo | failed, 등록된 레포)"""
+    registered = registered_repo(name)
+    if registered is not None and registered.resolve() != repo.resolve():
+        return "other_repo", registered
+    if not _loaded(f"{LABEL_PREFIX}.{name}"):
+        return "not_loaded", registered
+    return ("restarted" if restart(name) else "failed"), registered
+
+
 def job_states(log_dir: Path) -> dict[str, dict]:
     """작업별 상태. state: running | waiting(재시작 대기·예약) | off"""
     out = {}

@@ -128,7 +128,12 @@ final class AppModel: ObservableObject {
         if isApp {
             Agents.restart("bot")
         } else {
-            Task { _ = await Backend.run(["host", "on"]) }
+            // host on은 plist를 이 앱의 레포로 다시 쓴다 — 다른 체크아웃의 개발 앱이면 실제 봇이 옮겨 간다.
+            // restart는 등록된 작업만 kickstart하고, 다른 레포에 등록돼 있으면 건드리지 않고 이유를 돌려준다.
+            Task {
+                let r = await Backend.run(["host", "restart", "bot"])
+                if !r.ok { message = "봇을 재시작하지 않았어요: " + r.errorLine }
+            }
         }
     }
 

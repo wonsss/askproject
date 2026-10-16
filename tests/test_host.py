@@ -70,3 +70,55 @@ def test_bundle_agent_plists_are_relocatable():
     assert found["com.askproject.backup"]["ProgramArguments"][-1] == "nightly"
     # 팀 공유 터널: 설정이 없어 0으로 끝나면 다시 띄우지 않는다(실패일 때만 재시작)
     assert found["com.askproject.tunnel"]["KeepAlive"] == {"SuccessfulExit": False}
+
+
+@pytest.fixture
+def fake_launchd(tmp_path, monkeypatch):
+    """실제 launchd를 건드리지 않는다: LaunchAgents 폴더는 tmp, launchctl 호출은 기록만."""
+    calls, loaded = [], set()
+
+    def launchctl(*args):
+        calls.append(args)
+        ok = args[0] != "print" or args[1].rsplit("/", 1)[1] in loaded
+        return subprocess.CompletedProcess(args, 0 if ok else 113, "", "")
+
+    monkeypatch.setattr(host, "_agents_dir", lambda: tmp_path / "LaunchAgents")
+    monkeypatch.setattr(host, "_launchctl", launchctl)
+    (tmp_path / "LaunchAgents").mkdir()
+    return calls, loaded, tmp_path / "LaunchAgents"
+
+
+def _register(agents: Path, repo: Path) -> None:
+    job = next(j for j in jobs(repo, "/opt/homebrew/bin/uv") if j.name == "bot")
+    (agents / f"{job.label}.plist").write_bytes(plistlib.dumps(plist_for(job, repo, repo / "logs")))
+
+
+def test_restart_from_same_repo_kickstarts_without_rewriting(fake_launchd, tmp_path):
+    calls, loaded, agents = fake_launchd
+    repo = tmp_path / "main"
+    repo.mkdir()
+    _register(agents, repo)
+    loaded.add("com.askproject.bot")
+    before = (agents / "com.askproject.bot.plist").read_bytes()
+    assert host.restart_from("bot", repo) == ("restarted", repo)
+    assert ("kickstart", "-k", f"{host._domain()}/com.askproject.bot") in calls
+    assert not any(c[0] in ("bootout", "bootstrap") for c in calls)  # 재등록하지 않는다
+    assert (agents / "com.askproject.bot.plist").read_bytes() == before
+
+
+def test_restart_from_other_checkout_leaves_bot_alone(fake_launchd, tmp_path):
+    """worktree로 빌드한 개발 앱이 설정을 저장해도 실제 봇이 그 체크아웃으로 옮겨 가지 않는다"""
+    calls, loaded, agents = fake_launchd
+    main, worktree = tmp_path / "main", tmp_path / "worktree"
+    main.mkdir(), worktree.mkdir()
+    _register(agents, main)
+    loaded.add("com.askproject.bot")
+    assert host.restart_from("bot", worktree) == ("other_repo", main)
+    assert calls == []  # kickstart·bootout·bootstrap 모두 없음
+    assert host.registered_repo("bot") == main
+
+
+def test_restart_from_not_loaded(fake_launchd, tmp_path):
+    calls, _, _ = fake_launchd
+    assert host.restart_from("bot", tmp_path) == ("not_loaded", None)
+    assert not any(c[0] == "kickstart" for c in calls)
