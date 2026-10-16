@@ -73,6 +73,15 @@ def parse_flow(raw: str) -> dict:
     (프롬프트는 분기 2개 이상일 때만 내라고 하고, 여기서는 한 개까지 받아 준다.)
     """
     try:
+        return _parse_flow(raw)
+    except FlowSpecError:
+        raise
+    except (TypeError, ValueError, AttributeError) as e:  # 모델이 낸 이상한 타입(nodes: 5 등)
+        raise FlowSpecError(f"명세 형식 오류: {type(e).__name__}") from e
+
+
+def _parse_flow(raw: str) -> dict:
+    try:
         spec = json.loads(raw[:MAX_RAW])
     except json.JSONDecodeError as e:
         raise FlowSpecError(f"JSON 오류: {e}") from e
@@ -87,7 +96,8 @@ def parse_flow(raw: str) -> dict:
         if not nid or not text or nid in seen:
             continue
         seen.add(nid)
-        ntype = n.get("type") if n.get("type") in NODE_TYPES else "step"
+        t = n.get("type")
+        ntype = t if isinstance(t, str) and t in NODE_TYPES else "step"
         nodes.append({"id": nid, "type": ntype, "text": text, "ref": _s(n.get("ref"), MAX_REF)})
         if len(nodes) >= MAX_NODES:
             break

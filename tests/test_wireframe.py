@@ -188,3 +188,17 @@ async def test_unsupported_request_gets_its_own_message(store, tools, repo_cfg, 
     a = await svc.answer("이 버그 고쳐서 PR 올려줘")
     assert a.status == "refuse" and a.body == UNSUPPORTED_TEXT and not runner.requests
     assert "개인정보" not in a.body and "사용자 정보" not in a.body
+
+
+def test_malformed_model_specs_raise_spec_errors_only():
+    """모델이 이상한 타입을 내도 TypeError 등으로 질문 전체가 죽지 않고 SpecError가 된다."""
+    from askproject.pipeline.flowchart import FlowSpecError, parse_flow
+
+    with pytest.raises(WireframeSpecError):
+        parse_spec('{"screens": 5}')
+    with pytest.raises(WireframeSpecError):
+        parse_spec('{"title":"\\q", "screens":[{"elements":[{"type":"header","title":"x"}]')
+    spec = parse_spec('{"screens":[{"variant":["current"],"elements":[{"type":"header","title":"x"}]}]}')
+    assert "variant" not in spec["screens"][0]
+    with pytest.raises(FlowSpecError):
+        parse_flow('{"nodes": 5}')

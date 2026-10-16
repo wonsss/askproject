@@ -62,8 +62,8 @@ def _wireframe_attachment(text: str, filename: str) -> tuple[tuple[str, str] | N
         try:
             spec = parse_spec(raw_spec)
             return (filename, render_spec(spec)), rest, spec
-        except WireframeSpecError:
-            return None, rest, None
+        except (WireframeSpecError, TypeError, ValueError, AttributeError, KeyError):
+            return None, rest, None  # 그리지 못하면 첨부 없이 답한다(질문 전체를 실패시키지 않는다)
     raw_html, rest = extract_html(text)
     return ((filename, sanitize_html(raw_html)) if raw_html else None), rest, None
 

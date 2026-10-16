@@ -247,6 +247,15 @@ def extract_spec(text: str) -> tuple[str | None, str]:
 
 def parse_spec(raw: str) -> dict:
     """명세 JSON을 읽어 최소 구조를 확인한다. 실패하면 WireframeSpecError."""
+    try:
+        return _parse_spec(raw)
+    except WireframeSpecError:
+        raise
+    except (TypeError, ValueError, AttributeError, KeyError) as e:  # 모델이 낸 이상한 타입(screens: 5 등)
+        raise WireframeSpecError(f"명세 형식 오류: {type(e).__name__}") from e
+
+
+def _parse_spec(raw: str) -> dict:
     raw = raw[:MAX_HTML_BYTES]
     try:
         spec = json.loads(raw)
@@ -259,6 +268,9 @@ def parse_spec(raw: str) -> dict:
     screens = [s for s in spec.get("screens") or [] if isinstance(s, dict) and isinstance(s.get("elements"), list)]
     if not screens or not any(_valid_elements(s["elements"]) for s in screens):
         raise WireframeSpecError("그릴 화면이 없음")
+    for sc in screens:
+        if not isinstance(sc.get("variant"), str):
+            sc.pop("variant", None)  # is_comparison이 set에 넣는다 — 리스트 등은 버린다
     spec["screens"] = screens[:MAX_SCREENS]
     return spec
 
