@@ -116,6 +116,7 @@ uv run askproject eval [--ids q01]      # 골든 세트(eval/golden.yaml, 형식
 uv run askproject stats
 uv run askproject host on|off|status    # 맥북 호스트 모드: 봇·콘솔 상시 실행, 잠자기 방지, 매일 백업
 uv run askproject backup | restore-check | maintenance | nightly   # 감사 로그 백업·복구 확인·정리
+uv run askproject backups [--json] · restore <백업 파일> --yes      # 백업 목록 · 백업으로 DB 교체(docs/operations.md)
 uv run askproject redact <query_id> --reason "…"   # 개인정보 유입 시 텍스트 가림
 uv run askproject migrate               # DB 스키마·설정 형식 올리기 (백업 후, 다운그레이드 거부)
 uv run askproject diagnostics           # 비밀값을 가린 진단 묶음 zip (이 맥에만 저장)
@@ -166,6 +167,7 @@ uv run pytest
 | `ASKPROJECT_AGENT_MAX_BUDGET_USD` | 질문 하나의 비용 상한 (기본 0.5) |
 | `ASKPROJECT_ALLOWED_CHANNELS` | 봇이 답할 채널 ID(쉼표 구분, DM은 `dm`). 비우면 봇이 초대된 모든 채널 |
 | `ASKPROJECT_BACKUP_DIR` · `_KEEP_DAYS` · `_UPLOAD_CMD` | 백업 위치, 로컬 보관 일수, 서버 밖 복사 명령(`{file}`) |
+| `ASKPROJECT_BACKUP_COPY_DIR` · `_COPY_KEEP_DAYS` | 백업 사본 폴더(iCloud Drive 등 동기화 폴더, 앱 설정 → 맥 운영), 그 폴더의 보관 일수(기본 90) |
 | `ASKPROJECT_LLM_PROVIDER` | `api`(기본). `subscription`(로컬 `claude` CLI 구독 로그인)은 개발 PoC 전용 — 다른 사람에게 답하는 봇에 개인 구독을 쓰는 것은 Anthropic 정책상 허용되지 않아 배포 앱에서는 막혀 있다 |
 
 ## 운영

@@ -26,6 +26,7 @@ uv run askproject serve             # 슬랙 봇 (Socket Mode)
 uv run askproject stats
 uv run askproject console           # 웹 콘솔 127.0.0.1:8787 (읽기 전용, API 비용 없음)
 uv run askproject backup | restore-check | maintenance   # DB 운영 (docs/operations.md)
+uv run askproject backups [--json] | restore <백업 파일> --yes [--json]   # 백업 목록 · 백업으로 DB 교체(봇·콘솔 끈 뒤)
 uv run askproject tunnel              # 웹 콘솔 팀 공유 터널 (설정 → 팀 공유, launchd 작업용)
 uv run askproject host on|off|status   # 맥북 호스트 모드 (launchd, 잠자기 방지, 매일 백업)
 uv run askproject status [--json]      # 메뉴 막대 앱용 상태 (Claude 호출 없음)
@@ -73,7 +74,7 @@ uv run pytest
 - 와이어프레임 생성(화면 명세 JSON → 렌더러가 저충실도 HTML, 슬랙 파일 업로드). 상세는 `docs/wireframe.md`. 정책·흐름 질문에는 로직 흐름도(SVG HTML). 상세는 `docs/flowchart.md`.
 - 답변 끝에 '💬 이어서 물어보기' 후속 질문 버튼 2~3개.
 - 웹 콘솔(`askproject console`): 동기화 때 커밋별 파일 해시(`commit_files`)를 기록해 답의 최신성을 판단한다. 외부 공개는 Cloudflare Tunnel + Access(`docs/operations.md`). 배포 앱은 설정 → 팀 공유(대시보드 터널 토큰, 내장 cloudflared, 에이전트 `com.askproject.tunnel`, `tunnel.py`, `setup check tunnel`).
-- DB: 감사 로그 **영구 보존**. 스키마는 `PRAGMA user_version` + `store/db.py`의 `MIGRATIONS`(추가만, 현재 v3). 백업·복구 확인·정리·가리기 명령 있음, 서버 밖 복사는 `ASKPROJECT_BACKUP_UPLOAD_CMD`.
+- DB: 감사 로그 **영구 보존**. 스키마는 `PRAGMA user_version` + `store/db.py`의 `MIGRATIONS`(추가만, 현재 v3). 백업·복구 확인·정리·가리기·복구(`restore`) 명령 있음. 맥 밖 사본은 백업 사본 폴더(`ASKPROJECT_BACKUP_COPY_DIR`, 동기화 폴더에 원자적 복사) 또는 `ASKPROJECT_BACKUP_UPLOAD_CMD`. 앱은 패널 백업 폴더 열기, 설정 → 맥 운영에서 사본 폴더 고르기·'백업에서 복구'(`RestoreView.swift`).
 - 메뉴 막대 앱(SwiftUI `macos/AskProjectBar`, 화면만 맡고 CLI를 부름). 맥북 호스트 모드(`host.py`, launchd `com.askproject.{bot,console,backup}`)와 봇 중복 실행 잠금(`data/serve.lock`).
 - 배포 앱(DMG, `docs/packaging.md`): PBS 파이썬+의존성+rg 내장, Developer ID 서명(claude 바이너리는 Anthropic 서명 유지), SMAppService 에이전트, 첫 실행 마법사, Sparkle. 데이터는 ~/Library(Application Support·Caches·Logs) + Keychain. **앱 모드에서는 구독(subscription) 모드를 거부한다.** 앱↔백엔드 계약 버전 `askproject.__protocol__`.
 - 거버넌스: 답할 채널 허용 목록(`ASKPROJECT_ALLOWED_CHANNELS`, DM은 `dm`), 호스트 하트비트(`ASKPROJECT_HOST_CHANNEL`), PAT 만료 7일 전 경고. 에이전트 claude 하위 프로세스는 `cli_path` 명시·`DISABLE_AUTOUPDATER`·전용 `CLAUDE_CONFIG_DIR`로 사용자 ~/.claude와 격리.

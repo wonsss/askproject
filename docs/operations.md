@@ -9,7 +9,7 @@ AskProject의 데이터는 SQLite 파일 하나(`data/askproject.sqlite3`)에 �
 | **감사 로그**: 질문·답·근거·탐색 과정·피드백·비용·가림 기록 | `data/askproject.sqlite3` (Docker: 볼륨 `askproject-data`) | **복구 불가.** 백업이 유일한 사본 |
 | 코드·문서 인덱스, 구조 맵, 커밋별 파일 해시 | 같은 파일 | `askproject sync`로 다시 만든다. 단, 예전 커밋 해시는 사라져 옛 답의 최신성 판단이 ❔로 바뀐다 |
 | 대상 레포 클론 | `data/repos/` | `askproject sync`로 다시 받는다 |
-| 백업 | `backups/` (Docker: 호스트 `./backups`) + 서버 밖 복사본 | 서버 밖 복사본이 있으면 괜찮다 |
+| 백업 | `backups/` (Docker: 호스트 `./backups`) + 맥 밖 사본(백업 사본 폴더 또는 업로드 명령) | 맥 밖 사본이 있으면 괜찮다 |
 
 `data/`, `backups/`는 git에 올리지 않는다(`.gitignore`). 질문에 비공개 코드 정보가 들어 있기 때문이다.
 
@@ -19,7 +19,8 @@ AskProject의 데이터는 SQLite 파일 하나(`data/askproject.sqlite3`)에 �
 | --- | --- |
 | 감사 로그 DB·상태 | `~/Library/Application Support/AskProject/data/` |
 | 설정(`settings.env`·YAML·`meta.json`) | `~/Library/Application Support/AskProject/config/` |
-| 백업 | `~/Library/Application Support/AskProject/backups/` (마이그레이션 직전 백업은 `pre-migrate/`) |
+| 백업 | `~/Library/Application Support/AskProject/backups/` (마이그레이션 직전 `pre-migrate/`, 복구 직전 `pre-restore/`) |
+| 복구 전 DB | `…/data/askproject.sqlite3.before-restore-<시각>` (`-wal`·`-shm`도 같은 접미사, 지우지 않음) |
 | 레포 사본(재생성 가능) | `~/Library/Caches/AskProject/repos/` |
 | 로그 | `~/Library/Logs/AskProject/` |
 | 비밀값 | 로그인 Keychain, 서비스 `com.askproject` |
@@ -29,7 +30,8 @@ AskProject의 데이터는 SQLite 파일 하나(`data/askproject.sqlite3`)에 �
 **감사 로그는 영구 보존한다.** (2026-10-16 결정)
 
 - 질문·답·근거·피드백 행은 지우지 않는다. 테이블 트리거가 수정·삭제를 막는다(append-only).
-- 로컬 백업 파일만 `ASKPROJECT_BACKUP_KEEP_DAYS`(기본 14일)가 지나면 지운다. 서버 밖 복사본의 보관 기간은 저장소의 수명 주기 설정으로 정한다(권장: 90일 이상).
+- 로컬 백업 파일만 `ASKPROJECT_BACKUP_KEEP_DAYS`(기본 14일)가 지나면 지운다. 백업 사본 폴더는 `ASKPROJECT_BACKUP_COPY_KEEP_DAYS`(기본 90일)가 지난 `askproject-*.sqlite3`(+`.sha256`)만 지운다 — 동기화 폴더 용량(iCloud 무료 5GB 등)이 한정돼 있어서다. 그 폴더의 다른 파일은 건드리지 않는다. 업로드 명령으로 보낸 복사본의 보관 기간은 저장소의 수명 주기 설정으로 정한다(권장: 90일 이상).
+- `pre-migrate/`·`pre-restore/` 백업은 365일, 복구 때 옮겨 둔 `before-restore-*` 파일은 자동으로 지우지 않는다(확인 뒤 손으로 지운다).
 - 정리 대상은 감사 로그가 아니다. 답변이 참조하지 않는 오래된 **커밋 스냅숏**과 WAL 파일만 정리한다.
 - 개인정보가 섞여 들어온 경우에만 **가리기**(`askproject redact`)를 쓴다. 행은 남기고 텍스트만 가린다.
 
@@ -45,15 +47,29 @@ askproject nightly        # = backup → restore-check → maintenance (앞 단�
 
 | 단계 | 하는 일 |
 | --- | --- |
-| `backup` | SQLite 온라인 백업(봇이 쓰는 중에도 일관된 스냅숏) → 무결성 확인 → `.sha256` 기록 → 14일 지난 로컬 백업 정리 → `ASKPROJECT_BACKUP_UPLOAD_CMD`로 서버 밖 복사 |
+| `backup` | SQLite 온라인 백업(봇이 쓰는 중에도 일관된 스냅숏) → 무결성 확인 → `.sha256` 기록 → 14일 지난 로컬 백업 정리 → 백업 사본 폴더에 복사 → `ASKPROJECT_BACKUP_UPLOAD_CMD`로 서버 밖 복사 |
 | `restore-check` | 방금 만든 백업을 읽기 전용으로 열어 무결성·스키마 버전·질문 수 확인 |
 | `maintenance` | 답변이 참조하지 않는 커밋 스냅숏 삭제, WAL 체크포인트, 통계 갱신 |
 
 하나라도 실패하면 `backup failed`를 남긴다(`docker compose logs backup`).
 
-### 서버 밖 복사 설정
+### 맥 밖 사본: 백업 사본 폴더 (배포 앱·맥북 호스트 권장)
 
-백업이 같은 서버 디스크에만 있으면 서버가 사라질 때 함께 사라진다. 배포할 때 반드시 설정한다.
+백업이 같은 맥(서버) 디스크에만 있으면 맥을 잃을 때 함께 사라진다. 가장 쉬운 방법은 iCloud Drive·Google Drive 같은 **동기화 폴더**를 고르는 것이다. 앱의 설정 → 맥 운영 → 백업 사본 폴더에서 고르거나(`config set`이 검증: 있는 폴더, 쓰기 가능, 백업 폴더 자체·하위는 거부), 개발 모드는 `.env`에 쓴다.
+
+```
+ASKPROJECT_BACKUP_COPY_DIR=~/Library/Mobile Documents/com~apple~CloudDocs/AskProject
+ASKPROJECT_BACKUP_COPY_KEEP_DAYS=90   # 이 폴더의 오래된 askproject-*.sqlite3만 정리
+```
+
+- 백업할 때마다(매일·'지금 백업') 로컬 백업을 끝낸 뒤 `.sqlite3`, 그다음 `.sha256`를 숨김 임시 이름(`.<이름>.partial`)으로 복사하고 rename한다. 동기화 앱이 반쯤 쓴 파일을 올리지 않게 하기 위해서다. `.sha256`가 보이면 본 파일은 이미 완성돼 있다.
+- 폴더가 없으면(동기화 앱 종료·외장 디스크 분리) 로컬 백업은 남기고 `backup`이 실패로 끝난다(`nightly`는 거기서 멈춘다).
+- 상태·`doctor`는 **가장 최근 백업과 같은 이름의 사본이 그 폴더에 실제로 있을 때만** 맥 밖 사본으로 인정한다(업로드 명령이 설정돼 있으면 그것도 인정).
+- 사본에는 질문·답 원문이 들어 있다. 팀 공유 폴더가 아닌 개인 폴더를 고른다.
+
+### 서버 밖 복사 설정 (업로드 명령)
+
+서버(Docker)처럼 동기화 폴더가 없는 곳에서는 업로드 명령을 쓴다. 백업 사본 폴더와 함께 써도 된다.
 
 ```
 # .env 예시 — {file}이 백업 파일 경로로 바뀐다. 셸을 거치지 않으므로 파이프·변수 확장은 쓸 수 없다.
@@ -71,26 +87,35 @@ ASKPROJECT_BACKUP_UPLOAD_CMD=aws s3 cp {file} s3://askproject-backups/
 | DB 무결성 | `quick_check`가 `ok` |
 | DB 스키마 | 코드의 `SCHEMA_VERSION`과 같음 |
 | DB 용량 | 디스크 여유 2GB 이상 |
-| 최근 백업 | 36시간 이내, 서버 밖 복사 설정됨 |
+| 최근 백업 | 36시간 이내, 최근 백업의 맥 밖 사본 있음(사본 폴더) 또는 업로드 명령 설정됨 |
 
 주 1회 `doctor`를 돌리거나, 배포 환경의 모니터링에서 `backups/`의 최신 파일 시각을 본다.
 
 ## 복구 절차
 
-1. 백업을 고른다. 로컬이면 `backups/`, 서버가 없어졌으면 서버 밖 복사본을 내려받는다.
-2. 복구 전에 확인한다.
+복구는 **DB 파일 교체**다. 감사 로그 행을 지우지 않으므로 append-only 트리거와 부딪히지 않고, 지금 DB도 지우지 않고 옆에 옮겨 둔다.
+
+**앱에서**: 패널 '더 보기' 또는 설정 → 맥 운영 → **백업에서 복구…** → 백업 고르기(목록에 없으면 '다른 파일 고르기'로 사본 폴더·다른 맥의 파일) → 자동 확인 → 확인 대화상자 → 앱이 봇·콘솔·매일 백업을 멈추고(배포 앱: 켜져 있던 SMAppService 작업만 bootout, 개발 앱: `host off`) `restore`를 부른 뒤 켜져 있던 것만 다시 켜고(배포 앱은 `migrate` 먼저) `doctor` 결과를 보여 준다. 복구가 실패해도 다시 켠다.
+
+**CLI에서**:
+
+1. 백업을 고른다. `askproject backups`(매일·`pre-migrate/`·`pre-restore/`·사본 폴더에만 있는 것, sha256 일치·질문 수). 맥을 잃었으면 새 맥에서 사본 폴더나 서버 밖 복사본의 파일을 쓴다.
+2. 복구 전에 확인한다(무결성·스키마·sha256 — 옆에 `.sha256`가 있을 때).
    ```bash
-   uv run askproject restore-check backups/askproject-20261016-001542.sqlite3
-   sha256sum -c backups/askproject-20261016-001542.sqlite3.sha256
+   uv run askproject restore-check backups/askproject-20261016-001542.sqlite3     # 앱은 --json
    ```
-3. 봇을 멈춘다(`docker compose stop askproject` 또는 `Ctrl+C`).
-4. 현재 DB를 옆으로 옮기고, 백업을 제자리에 둔다. WAL 파일도 함께 옮긴다.
+3. 봇·콘솔을 멈춘다(`askproject host off`, `docker compose stop askproject`, 또는 `Ctrl+C`).
+4. 복구한다.
    ```bash
-   mv data/askproject.sqlite3 data/askproject.sqlite3.broken
-   mv data/askproject.sqlite3-wal data/askproject.sqlite3-shm /tmp/ 2>/dev/null
-   cp backups/askproject-20261016-001542.sqlite3 data/askproject.sqlite3
+   uv run askproject restore backups/askproject-20261016-001542.sqlite3 --yes     # 앱은 --json
    ```
-5. 봇을 시작하고 `askproject doctor`로 확인한다. 백업 이후 질문은 사라진 상태다.
+   `restore`가 하는 일:
+   - 2와 같은 확인. 문제가 있으면 아무것도 바꾸지 않는다.
+   - `data/serve.lock`·`data/migrate.lock`을 잡는다. 봇이 잠금을 쥐고 있거나 웹 콘솔(`data/console.json`의 pid)이 살아 있으면 거부한다. 잠금은 끝날 때까지 쥐고 있어 도중에 봇이 뜨지 않는다.
+   - 지금 DB를 `backups/pre-restore/`에 한 번 더 온라인 백업한다(망가진 DB라 실패해도 다음 단계에서 원본을 옮겨 두므로 계속한다).
+   - 지금 DB와 `-wal`·`-shm`을 `data/askproject.sqlite3.before-restore-<시각>`(+`-wal`, `-shm`)으로 옮긴다. 접미사를 맞춰 두어 그 묶음도 SQLite로 그대로 열린다.
+   - 백업을 `data/.askproject.sqlite3.restoring`으로 복사한 뒤 rename으로 제자리에 둔다. 복사가 실패하면 옮긴 파일을 되돌린다.
+5. 봇을 시작하고 `askproject doctor`로 확인한다. 백업 이후 질문은 화면에서 사라진 상태다(옮겨 둔 `before-restore-*`에는 남아 있다). 예전 스키마의 백업이면 `migrate`(또는 launchd 작업 시작)가 먼저 올린다.
 6. 인덱스는 백업에 들어 있으므로 바로 동작한다. 최신 코드로 맞추려면 `askproject sync`.
 
 **연습:** 파일럿 시작 전에 한 번, 이후 분기마다 한 번 다른 폴더에서 4~5단계를 해 본다.

@@ -25,7 +25,7 @@ AskProject.app/Contents/
 |---|---|---|
 | 설정 | `~/Library/Application Support/AskProject/config/` | `settings.env`(일반 설정), `repos.yaml`·`domains.yaml`·`glossary.yaml`, `meta.json`(config_version) |
 | 상태 | `…/AskProject/data/` | 감사 로그 DB, 호스트 ID, 콘솔 토큰, PAT 만료 기록, claude 전용 설정 폴더 |
-| 백업 | `…/AskProject/backups/` | 매일 03:30 + 마이그레이션 직전(`pre-migrate/`) |
+| 백업 | `…/AskProject/backups/` | 매일 03:30 + 마이그레이션 직전(`pre-migrate/`) + 복구 직전(`pre-restore/`). 맥 밖 사본은 설정 → 맥 운영 → 백업 사본 폴더 |
 | 재생성 가능 | `~/Library/Caches/AskProject/repos/` | 레포 사본·트리. 지워도 다음 동기화가 다시 받는다 |
 | 로그 | `~/Library/Logs/AskProject/{bot,console,backup}.log` | 5MB에서 copytruncate 회전, 3개 보관 |
 | 비밀값 | 로그인 Keychain, 서비스 `com.askproject` | 슬랙·GitHub·Claude·노션 토큰 |
