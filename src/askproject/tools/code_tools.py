@@ -127,6 +127,7 @@ class CodeTools:
             return f"{path}: 파일은 {total}줄입니다."
         with (self.repo_path / path).open(encoding="utf-8", errors="replace") as f:
             lines = f.read().splitlines()
+        end = min(end, len(lines))  # 동기화 직후 파일이 인덱스보다 짧아졌을 수 있다
         out_lines = []
         for i in range(start, end + 1):
             line = lines[i - 1][:400]
@@ -142,8 +143,8 @@ class CodeTools:
     def list_dir(self, session: ToolSession, prefix: str) -> str:
         prefix = prefix.strip().strip("/")
         rows = self.store.execute(
-            "SELECT path, lines FROM files WHERE repo=? AND path LIKE ? ORDER BY path",
-            (self.repo.name, f"{prefix}/%" if prefix else "%"),
+            "SELECT path, lines FROM files WHERE repo=? AND substr(path, 1, ?) = ? ORDER BY path",
+            (self.repo.name, len(prefix) + 1 if prefix else 0, f"{prefix}/" if prefix else ""),
         ).fetchall()
         if not rows:
             return f"'{prefix}' 아래 인덱싱된 파일이 없습니다."

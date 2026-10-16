@@ -34,3 +34,16 @@ def test_read_clamps_and_rejects(tools):
 def test_list_dir_groups_one_level(tools):
     out = tools.list_dir(ToolSession(), "apps")
     assert "apps/api/" in out and "apps/web/" in out
+
+
+def test_read_survives_file_shorter_than_index(tools):
+    """동기화 직후 파일이 인덱스의 줄 수보다 짧아져도 IndexError로 죽지 않는다."""
+    p = "apps/api/src/bills/bills.controller.ts"
+    (tools.repo_path / p).write_text("one\ntwo\n", encoding="utf-8")
+    out = tools.read(ToolSession(), p, 1, 999)
+    assert "    2  two" in out and "IndexError" not in out
+
+
+def test_list_dir_treats_underscore_literally(tools):
+    """LIKE의 _·% 와일드카드 때문에 다른 폴더가 섞이지 않는다."""
+    assert "인덱싱된 파일이 없습니다" in tools.list_dir(ToolSession(), "app_")
