@@ -1,0 +1,18 @@
+# 빌드 컨텍스트·이미지에 비밀값과 비공개 대상 레포 정보를 넣지 않는다
+.git
+.venv
+.claude
+.env
+.env.*
+!.env.example
+secrets/
+data/
+backups/
+build/
+dist/
+eval/golden.yaml
+eval/results/
+*.pem
+*.p12
+*.p8
+*.key
