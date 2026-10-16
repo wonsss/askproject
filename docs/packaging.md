@@ -43,6 +43,7 @@ NOTARY_PROFILE=askproject bash scripts/build-dmg.sh   # 공증 + 스테이플 + 
 - 표준 라이브러리 중 tkinter·test·idlelib 등은 지우고, `__pycache__`는 `--invalidation-mode unchecked-hash`로 미리 컴파일한다. 실행할 때는 `-B`라서 번들에 아무것도 쓰지 않는다. 번들에 쓰면 서명이 깨진다.
 - rg는 공식 릴리스(15.2.0)를 sha256으로 확인한다. Homebrew 판은 `/opt/homebrew/opt/pcre2` dylib에 묶여 있어 쓸 수 없다.
 - Sparkle 2.10.0은 sha256을 고정해 받는다(`scripts/fetch-sparkle.sh`).
+- 앱 아이콘은 커밋된 `macos/AskProjectBar/AppIcon.icns`를 두 빌드 스크립트가 복사한다. 디자인은 `scripts/make-icon.swift`에 코드로 있고, 고친 뒤 `bash scripts/make-icon.sh`로 icns를 다시 만들어 커밋한다.
 - `scripts/check-bundle.sh`는 번들에 `golden.yaml`·`.env`·`*.pem`·DB·회사별 YAML이 들어가지 않았는지 검사한다. 걸리면 빌드가 실패한다.
 
 ## 서명·공증

@@ -16,6 +16,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp "$SRC/Info.plist" "$APP/Contents/Info.plist"
+cp "$SRC/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 /usr/libexec/PlistBuddy -c "Set :AskProjectRepo $REPO_ROOT" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :AskProjectUV $UV_PATH" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(date '+%Y%m%d%H%M')" "$APP/Contents/Info.plist"

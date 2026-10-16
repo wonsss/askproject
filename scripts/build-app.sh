@@ -23,6 +23,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Library/LaunchAgents" "$APP/Contents/Frameworks"
 
 cp "$SRC/Info.plist" "$APP/Contents/Info.plist"
+cp "$SRC/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" -c "Set :CFBundleVersion $BUILD_NO" \
   -c "Delete :AskProjectRepo" -c "Delete :AskProjectUV" "$APP/Contents/Info.plist"
 [ -n "${SU_FEED_URL:-}" ] && /usr/libexec/PlistBuddy -c "Set :SUFeedURL $SU_FEED_URL" "$APP/Contents/Info.plist"
