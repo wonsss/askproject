@@ -25,6 +25,8 @@ struct LearnPlan: Decodable {
     let relearn_hint: String?
     let note: String?
     let error: String?
+    /// 아직 적용·버리지 않은 마지막 제안(창을 다시 열어도 학습 결과를 잃지 않게)
+    var pending: LearnProposal?
 }
 
 /// 항목 값: 도메인은 객체, 용어는 식별자 목록.
@@ -114,6 +116,8 @@ struct LearnProposal: Decodable {
     let coverage: LearnCoverage?
     let agent_error: String?
     let error: String?
+    var created_at: Double?
+    var stale: String?  // 학습 뒤 레포가 동기화돼 바뀌었으면 안내
 }
 
 struct LearnApplyResult: Decodable {
@@ -147,6 +151,29 @@ final class LearnModel: ObservableObject {
         let (p, out) = await Backend.json(LearnPlan.self, ["learn", kind, "--dry-run", "--json"])
         plan = p ?? LearnPlan(ok: false, ready: false, reason: nil, model: nil, provider: nil, materials: nil,
                               estimate_usd: nil, max_usd: nil, relearn_hint: nil, note: nil, error: out.errorLine)
+        // 창을 닫았다 열었거나 앱을 다시 켰어도, 받아 둔 학습 결과를 다시 학습하지 않고 보여 준다
+        if proposal == nil, !running, let pending = p?.pending {
+            show(pending)
+            let when = pending.created_at.map {
+                let f = DateFormatter()
+                f.dateFormat = "M월 d일 HH:mm"
+                return f.string(from: Date(timeIntervalSince1970: $0))
+            } ?? "이전"
+            note = CheckResult(ok: true, detail: "\(when)에 받은 학습 결과를 불러왔어요. 다시 학습하지 않아도 돼요.", step: nil)
+        }
+    }
+
+    private func show(_ p: LearnProposal) {
+        proposal = p
+        selected = Set((p.items ?? []).filter { $0.selectable && $0.default_accept }.map(\.key))
+    }
+
+    /// 버린 제안은 다음에 화면을 열어도 다시 불러오지 않는다
+    func dismiss() async {
+        if let id = proposal?.id { _ = await Backend.run(["learn", kind, "--dismiss", id, "--json"]) }
+        proposal = nil
+        selected = []
+        note = nil
     }
 
     func run() async {
@@ -160,8 +187,7 @@ final class LearnModel: ObservableObject {
             note = CheckResult(ok: false, detail: "학습하지 못했어요: " + (p?.error ?? out.errorLine), step: nil)
             return
         }
-        proposal = p
-        selected = Set((p.items ?? []).filter { $0.selectable && $0.default_accept }.map(\.key))
+        show(p)
         if (p.items ?? []).allSatisfy({ !$0.selectable }) {
             note = CheckResult(ok: true, detail: "바꿀 항목이 없어요. 지금 \(label)와 같거나 잠긴 항목뿐이에요.", step: nil)
         }
@@ -213,7 +239,7 @@ struct DomainsLearnView: View {
             currentFile
         } footer: {
             if m.proposal != nil {
-                Button("버리기") { m.proposal = nil; m.selected = [] }.disabled(m.applying)
+                Button("버리기") { Task { await m.dismiss() } }.disabled(m.applying)
                 Spacer()
                 if m.applying { ProgressView().controlSize(.small) }
                 Button("선택한 \(m.selected.count)개 적용") {
@@ -290,6 +316,10 @@ struct DomainsLearnView: View {
         let items = (p.items ?? []).filter { $0.action != "same" }
         GroupBox {
             VStack(alignment: .leading, spacing: 10) {
+                if let stale = p.stale {
+                    Label(stale, systemImage: "clock.arrow.circlepath").font(.caption).foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Text("비용 \(money(p.cost_usd)) · 대화 \(p.num_turns ?? 0)회"
                      + (p.agent_error.map { " · 경고: \($0)" } ?? ""))
                     .font(.caption).foregroundStyle(.secondary)

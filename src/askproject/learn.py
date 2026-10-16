@@ -138,6 +138,33 @@ class Workspace:
         for old in sorted(d.glob("*.json"))[:-KEEP_PROPOSALS]:
             old.unlink(missing_ok=True)
 
+    def pending(self, kind: str, current_text: str, commit: str | None) -> dict | None:
+        """아직 적용·버리지 않은 마지막 제안. 앱이 창을 다시 열어도 학습 결과(약 $1)를 잃지 않게 한다.
+
+        마지막 적용보다 뒤에 만든 것이고, 제안을 만들 때의 파일과 지금 파일이 같을 때만 돌려준다(아니면 적용도 거부된다).
+        """
+        last = ((self.load_learned().get("last") or {}).get(kind) or {}).get("applied_at") or 0
+        for p in sorted((self.learn_dir / "proposals").glob(f"*-{kind}-*.json"), reverse=True):
+            try:
+                prop = json.loads(p.read_text(encoding="utf-8"))
+            except ValueError:
+                continue
+            if prop.get("kind") != kind or (prop.get("created_at") or 0) <= last:
+                return None  # 이보다 오래된 것은 볼 필요 없다
+            if prop.get("applied_at") or prop.get("dismissed_at"):
+                return None  # 가장 최근 제안을 이미 처리했다
+            if prop.get("base_hash") != _sha(current_text):
+                return None  # 그사이 파일이 바뀌었다 — 적용할 수 없는 제안
+            if commit and prop.get("commit") and prop["commit"] != commit:
+                prop["stale"] = "학습한 뒤 레포가 동기화돼 바뀌었어요. 경로가 달라졌을 수 있으니 확인하고 적용하거나 다시 학습하세요."
+            return prop
+        return None
+
+    def mark_proposal(self, pid: str, field: str) -> None:
+        prop = self.load_proposal(pid)
+        prop[field] = time.time()
+        self.save_proposal(prop)
+
     def load_proposal(self, pid: str) -> dict:
         if not re.fullmatch(r"[A-Za-z0-9_-]{6,80}", pid or ""):
             raise LearnError("제안 id 형식이 아니에요.")
@@ -518,6 +545,7 @@ class Learner:
             "max_turns": MAX_TURNS[kind],
             "relearn_hint": self._relearn_hint(kind),
             "items": len(current_items(kind, text)[1]),
+            "pending": self.workspace.pending(kind, text, self.store.get_repo_commit(self.repo.name)),
         }
         if self.provider == "subscription":
             out["note"] = "구독 모드라 토큰 과금은 없어요(구독 사용량에서 빠져요). 금액은 api 모드 기준이에요."
@@ -645,5 +673,6 @@ def apply(ws: Workspace, proposal_id: str, accept: list[str] | None) -> dict:
     learned.setdefault("last", {})[kind] = {"proposal": proposal_id, "commit": proposal.get("commit"),
                                             "applied_at": time.time(), "dirs": proposal.get("dirs") or []}
     ws.save_learned(learned)
+    ws.mark_proposal(proposal_id, "applied_at")
     return {"ok": True, "kind": kind, "applied": applied, "skipped": skipped,
             "backup": str(backup) if backup else None, "restart_needed": True}

@@ -573,7 +573,8 @@ def _print_proposal(p: dict) -> None:
     print(f"적용: askproject learn {p['kind']} --apply {p['id']} [--accept 키1,키2]  (생략하면 + ~ 항목)")
 
 
-def cmd_learn(kind: str, dry_run: bool, apply_ref: str | None, accept: str | None, as_json: bool, yes: bool) -> None:
+def cmd_learn(kind: str, dry_run: bool, apply_ref: str | None, accept: str | None, as_json: bool, yes: bool,
+              dismiss: str | None = None) -> None:
     from askproject.learn import LearnError, Workspace, apply
 
     def fail(msg: str) -> None:
@@ -581,6 +582,13 @@ def cmd_learn(kind: str, dry_run: bool, apply_ref: str | None, accept: str | Non
         sys.exit(2)
 
     try:
+        if dismiss:
+            from askproject.settings import Settings
+
+            s = Settings()
+            Workspace(s.config_dir, s.data_dir, s.backup_dir).mark_proposal(dismiss, "dismissed_at")
+            print(json.dumps({"ok": True}) if as_json else "버린 제안으로 표시했어요.")
+            return
         if apply_ref:
             from askproject.settings import Settings
 
@@ -614,6 +622,8 @@ def cmd_learn(kind: str, dry_run: bool, apply_ref: str | None, accept: str | Non
                     print(plan["reason"])
                 if plan["relearn_hint"]:
                     print(plan["relearn_hint"])
+                if plan.get("pending"):
+                    print(f"아직 적용하지 않은 제안: {plan['pending']['id']} (askproject learn {kind} --apply <id>)")
             if not plan["ready"] and not dry_run:
                 sys.exit(2)
             return
@@ -689,6 +699,7 @@ def main() -> None:
     ln.add_argument("--apply", metavar="ID|-", help="제안 적용 (-면 표준 입력 {\"proposal_id\", \"accept\": [...]})")
     ln.add_argument("--accept", help="--apply ID와 함께: 적용할 항목 키(쉼표). 생략하면 추가·변경 항목")
     ln.add_argument("--yes", action="store_true", help="비용 확인 없이 실행")
+    ln.add_argument("--dismiss", metavar="ID", help="제안을 버린 것으로 표시 (다시 불러오지 않음)")
     ln.add_argument("--json", action="store_true")
     sub.add_parser("migrate", help="DB 스키마·설정 형식 올리기 (백업 후, 다운그레이드 거부)")
     dg = sub.add_parser("diagnostics", help="비밀값을 가린 진단 묶음 zip")
@@ -791,7 +802,7 @@ def main() -> None:
     elif args.cmd == "migrate":
         cmd_migrate()
     elif args.cmd == "learn":
-        cmd_learn(args.kind, args.dry_run, args.apply, args.accept, args.json, args.yes)
+        cmd_learn(args.kind, args.dry_run, args.apply, args.accept, args.json, args.yes, args.dismiss)
     elif args.cmd == "diagnostics":
         cmd_diagnostics(args.out)
 

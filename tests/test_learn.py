@@ -164,3 +164,28 @@ async def test_plan_reports_estimate_without_calling_agent(store, repo_cfg, repo
     assert 0 < plan["estimate_usd"] <= plan["max_usd"] == 2.0
     # 실측 보정: 재료 9천 자·14회 대화에서 실제 $1.09
     assert 0.9 < estimate_usd("claude-sonnet-5-5", 9000, "domains", 14) < 1.3
+
+
+async def test_pending_proposal_survives_until_applied_or_dismissed(store, repo_cfg, repo_dir, tools, ws):
+    learner = make_learner(store, repo_cfg, repo_dir, tools, ws, DOMAIN_DRAFT)
+    assert learner.plan("domains")["pending"] is None
+    p1 = await learner.propose("domains")
+    p2 = await learner.propose("domains")
+    pending = learner.plan("domains")["pending"]
+    assert pending["id"] == max(p1["id"], p2["id"]) and "stale" not in pending  # 마지막 제안
+    ws.mark_proposal(pending["id"], "dismissed_at")
+    assert learner.plan("domains")["pending"] is None  # 버리면 다시 뜨지 않는다
+
+    p3 = await learner.propose("domains")
+    store.set_repo_state(repo_cfg.name, "newcommit99")
+    assert "동기화" in learner.plan("domains")["pending"]["stale"]
+    apply(ws, p3["id"], ["bills"])
+    assert ws.load_proposal(p3["id"])["applied_at"]
+    assert learner.plan("domains")["pending"] is None  # 적용한 뒤에는 없다
+
+
+async def test_pending_skipped_when_file_changed(store, repo_cfg, repo_dir, tools, ws):
+    learner = make_learner(store, repo_cfg, repo_dir, tools, ws, DOMAIN_DRAFT)
+    await learner.propose("domains")
+    ws.file("domains").write_text(DOMAINS_TEMPLATE + "\n# 손으로 고침\n", encoding="utf-8")
+    assert learner.plan("domains")["pending"] is None
