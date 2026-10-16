@@ -1,0 +1,13 @@
+# AskProject 골든 세트 형식 — eval/golden.yaml로 복사해 대상 레포에 맞게 채운다.
+# uv run askproject eval [--ids q01] [--limit N]  →  eval/results/에 결과 저장
+
+- id: q01
+  type: simple              # simple | policy | screen_hybrid | multi_hop | decision | broad | out_of_scope
+  question: "로그인은 어떻게 하나요?"
+  expected_behavior: answer # answer | clarify | refuse
+  expected_domains: [auth]  # config/domains.yaml의 도메인 id
+  answer: "기대하는 정답 요지 — 판정 모델이 이 내용과 비교한다."
+  evidence:                  # 정답의 근거가 되는 코드·문서 구간
+    - path: apps/api/src/auth/auth.controller.ts
+      lines: "10-30"
+  notes: "채점 기준 메모"

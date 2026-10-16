@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key>
+  <string>AskProjectBar</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.askproject.bar</string>
+  <key>CFBundleName</key>
+  <string>AskProject</string>
+  <key>CFBundleDisplayName</key>
+  <string>AskProject</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>0.1.0</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>13.0</string>
+  <key>LSUIElement</key>
+  <true/>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.developer-tools</string>
+  <!-- Sparkle 업데이트: 배포 빌드가 채운다(scripts/build-app.sh의 SU_FEED_URL·SU_PUBLIC_ED_KEY). 비면 업데이트 꺼짐 -->
+  <key>SUFeedURL</key>
+  <string></string>
+  <key>SUPublicEDKey</key>
+  <string></string>
+  <key>SUEnableAutomaticChecks</key>
+  <true/>
+  <!-- 개발 빌드(scripts/build-macos-app.sh)만 채운다: AskProject 레포 경로와 uv 경로. 배포 빌드는 지운다 -->
+  <key>AskProjectRepo</key>
+  <string></string>
+  <key>AskProjectUV</key>
+  <string></string>
+</dict>
+</plist>

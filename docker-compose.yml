@@ -1,0 +1,49 @@
+# Vultr 인스턴스 한 대에서 실행. Socket Mode라 ports 설정이 없다(외부에 열린 포트 0개).
+services:
+  askproject:
+    build: .
+    image: askproject:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ASKPROJECT_DATA_DIR: /data
+      ASKPROJECT_GITHUB_APP_PRIVATE_KEY_PATH: /run/secrets/github-app.pem
+    volumes:
+      - askproject-data:/data              # 레포 클론, 인덱스, 감사 로그(SQLite)
+      - ./secrets/github-app.pem:/run/secrets/github-app.pem:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /home/askproject
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    mem_limit: 4g
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+
+  # 감사 로그 일일 백업 + 정리 (docs/operations.md). 감사 로그는 영구 보존, 로컬 백업 파일만 14일 보관.
+  # 서버가 통째로 사라져도 남도록 ASKPROJECT_BACKUP_UPLOAD_CMD로 서버 밖에 복사한다(예: rclone, aws s3 cp).
+  backup:
+    image: askproject:latest
+    depends_on: [askproject]
+    restart: unless-stopped
+    user: "0:0"                        # 호스트 ./backups 쓰기용
+    env_file: .env
+    environment:
+      ASKPROJECT_DATA_DIR: /data
+      ASKPROJECT_BACKUP_DIR: /backups
+    volumes:
+      - askproject-data:/data              # WAL 모드라 읽기 전용 마운트로는 백업 API가 동작하지 않음
+      - ./backups:/backups
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        while true; do
+          askproject backup && askproject restore-check && askproject maintenance || echo "backup failed $(date)" >&2
+          sleep 86400
+        done
+
+volumes:
+  askproject-data:

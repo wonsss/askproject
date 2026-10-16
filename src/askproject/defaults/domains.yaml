@@ -1,0 +1,14 @@
+# 도메인 맵 — 기획자 관점의 기능 단위. 스코핑이 질문을 여기 도메인으로 좁힌다.
+# paths: 이 도메인 질문일 때 검색·읽기를 허용할 경로(하드 필터). shared는 모든 도메인에 함께 열린다.
+shared:
+  - "CLAUDE.md"
+  - "AGENTS.md"
+  - "docs/**"
+
+domains: []
+# 아래 형식으로 서비스의 기능 도메인을 채운다.
+#  - id: orders
+#    name: 주문
+#    summary: 주문 생성·목록·상세, 상태 전이, 취소·환불
+#    terms: [주문, 결제, 취소, 환불]
+#    paths: ["apps/api/src/orders/**", "apps/web/app/orders/**", "docs/**/*order*"]

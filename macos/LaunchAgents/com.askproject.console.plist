@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>com.askproject.bar</string>
+	</array>
+	<key>BundleProgram</key>
+	<string>Contents/MacOS/askproject-backend</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>ASKPROJECT_JOB</key>
+		<string>console</string>
+	</dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>com.askproject.console</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>askproject-backend</string>
+		<string>console</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>60</integer>
+</dict>
+</plist>
