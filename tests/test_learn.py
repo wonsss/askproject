@@ -172,7 +172,8 @@ async def test_pending_proposal_survives_until_applied_or_dismissed(store, repo_
     p1 = await learner.propose("domains")
     p2 = await learner.propose("domains")
     pending = learner.plan("domains")["pending"]
-    assert pending["id"] == max(p1["id"], p2["id"]) and "stale" not in pending  # 마지막 제안
+    # 마지막(나중에 만든) 제안. 같은 초에 만든 두 제안은 id 문자열 순서가 무작위라 id 크기로 비교하지 않는다
+    assert pending["id"] == p2["id"] and p1["id"] != p2["id"] and "stale" not in pending
     ws.mark_proposal(pending["id"], "dismissed_at")
     assert learner.plan("domains")["pending"] is None  # 버리면 다시 뜨지 않는다
 

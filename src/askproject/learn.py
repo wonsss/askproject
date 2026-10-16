@@ -144,11 +144,14 @@ class Workspace:
         마지막 적용보다 뒤에 만든 것이고, 제안을 만들 때의 파일과 지금 파일이 같을 때만 돌려준다(아니면 적용도 거부된다).
         """
         last = ((self.load_learned().get("last") or {}).get(kind) or {}).get("applied_at") or 0
-        for p in sorted((self.learn_dir / "proposals").glob(f"*-{kind}-*.json"), reverse=True):
+        props = []
+        for p in (self.learn_dir / "proposals").glob(f"*-{kind}-*.json"):
             try:
-                prop = json.loads(p.read_text(encoding="utf-8"))
+                props.append(json.loads(p.read_text(encoding="utf-8")))
             except ValueError:
                 continue
+        # 파일 이름(초 단위 시각 + 무작위 꼬리)이 아니라 만든 시각으로 고른다 — 같은 초에 만든 제안은 이름 순서가 무작위다
+        for prop in sorted(props, key=lambda x: x.get("created_at") or 0, reverse=True):
             if prop.get("kind") != kind or (prop.get("created_at") or 0) <= last:
                 return None  # 이보다 오래된 것은 볼 필요 없다
             if prop.get("applied_at") or prop.get("dismissed_at"):
