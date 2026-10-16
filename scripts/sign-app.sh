@@ -3,6 +3,7 @@
 #   SIGN_ID="Developer ID Application: …" bash scripts/sign-app.sh dist/AskProject.app
 # claude 바이너리는 Anthropic의 Developer ID 서명(Hardened Runtime·allow-jit 등 entitlement 포함)을 그대로 둔다.
 # 다시 서명하면 우리 entitlement로 바뀌어 Bun 런타임이 실행 중 JIT 메모리를 못 쓴다.
+# cloudflared도 Cloudflare의 Developer ID 서명(Hardened Runtime·타임스탬프)을 그대로 두고 확인만 한다.
 set -euo pipefail
 
 APP="${1:?앱 경로}"
@@ -11,6 +12,7 @@ SIGN_ID="${SIGN_ID:-$(security find-identity -v -p codesigning | sed -n 's/.*"\(
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ENT="$HERE/../macos/entitlements"
 CLAUDE_REL="Contents/Resources/backend/python/lib/python3.12/site-packages/claude_agent_sdk/_bundled/claude"
+CFD_REL="Contents/Resources/backend/bin/cloudflared"
 
 sign() { codesign --force --timestamp --options runtime --sign "$SIGN_ID" "$@"; }
 
@@ -22,9 +24,15 @@ case "$claude_sig" in
   *) echo "claude 바이너리 서명이 Anthropic Developer ID가 아닙니다"; exit 1 ;;
 esac
 
-# 1) 백엔드 라이브러리·실행 파일 (claude 제외). 확장자가 없는 Mach-O도 file로 찾는다
+codesign --verify --strict "$APP/$CFD_REL"
+case "$(codesign -dvv "$APP/$CFD_REL" 2>&1)" in
+  *"Authority=Developer ID Application: Cloudflare Inc."*"TeamIdentifier=68WVV388M8"*) ;;
+  *) echo "cloudflared 서명이 Cloudflare Developer ID가 아닙니다"; exit 1 ;;
+esac
+
+# 1) 백엔드 라이브러리·실행 파일 (claude·cloudflared 제외). 확장자가 없는 Mach-O도 file로 찾는다
 find "$APP/Contents/Resources/backend" -type f \( -name '*.so' -o -name '*.dylib' -o -perm -u+x \) \
-  ! -path "*/$(basename "$CLAUDE_REL")" -print0 \
+  ! -path "*/$(basename "$CLAUDE_REL")" ! -path "*/$CFD_REL" -print0 \
   | xargs -0 file | grep 'Mach-O' | cut -d: -f1 \
   | tr '\n' '\0' | xargs -0 -n 40 -P 6 codesign --force --timestamp --options runtime --sign "$SIGN_ID" >/dev/null
 # 파이썬 인터프리터는 entitlement 없이 서명한다(arm64 libffi는 정적 트램펄린이라 JIT 메모리 불필요 — W0에서 확인)

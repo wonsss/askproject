@@ -1,5 +1,5 @@
 #!/bin/bash
-# 내장 구성 요소의 라이선스 고지를 한 파일로 모은다(파이썬 패키지·인터프리터·ripgrep·claude 약관 안내).
+# 내장 구성 요소의 라이선스 고지를 한 파일로 모은다(파이썬 패키지·인터프리터·ripgrep·cloudflared·claude 약관 안내).
 set -euo pipefail
 BACKEND="${1:?백엔드 폴더}"
 OUT="${2:?출력 파일}"
@@ -16,6 +16,9 @@ SITE="$BACKEND/python/lib/python3.12/site-packages"
   echo
   echo "== ripgrep =="
   cat "$BACKEND/licenses/ripgrep/LICENSE-MIT"
+  echo
+  echo "== cloudflared $(sed -n 's/.*"cloudflared": "\(.*\)".*/\1/p' "$BACKEND/BUILD_INFO.json") (Cloudflare, Apache-2.0) =="
+  cat "$BACKEND/licenses/cloudflared/LICENSE"
   for d in "$SITE"/*.dist-info; do
     name="$(sed -n 's/^Name: //p' "$d/METADATA" | head -1)"
     ver="$(sed -n 's/^Version: //p' "$d/METADATA" | head -1)"

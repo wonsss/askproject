@@ -1,5 +1,5 @@
 #!/bin/bash
-# 백엔드 번들: python-build-standalone 인터프리터 + 의존성 + rg를 한 폴더로 만든다(앱의 Contents/Resources/backend).
+# 백엔드 번들: python-build-standalone 인터프리터 + 의존성 + rg + cloudflared를 한 폴더로 만든다(앱의 Contents/Resources/backend).
 #   bash scripts/build-backend-bundle.sh [출력 폴더]     # 기본 build/backend
 # venv 대신 PBS 인터프리터의 site-packages에 직접 설치한다 — venv의 pyvenv.cfg는 기반 인터프리터를 절대 경로로
 # 가리켜 앱을 옮기면 깨진다. 결과물은 위치와 무관하게 `python/bin/python3.12 -I -B -m askproject`로 실행된다.
@@ -12,6 +12,9 @@ WORK="$REPO_ROOT/build/work"
 PY_VER="3.12"
 RG_VER="15.2.0"
 RG_NAME="ripgrep-$RG_VER-aarch64-apple-darwin"
+# cloudflared(웹 콘솔 팀 공유). 올릴 때는 릴리스 자산의 sha256(GitHub 'digest')으로 함께 바꾼다
+CFD_VER="2026.9.3"
+CFD_SHA256="587c2cfb1c230fe36c7fa7727da78be459dae028cabe8c001291999350f07095"
 
 [ "$(uname -m)" = "arm64" ] || { echo "arm64 전용 빌드입니다"; exit 1; }
 rm -rf "$OUT" "$WORK"
@@ -59,17 +62,30 @@ fi
 cp "$RG_CACHE/rg" "$OUT/bin/rg"
 mkdir -p "$OUT/licenses/ripgrep" && cp "$RG_CACHE"/{COPYING,UNLICENSE,LICENSE-MIT} "$OUT/licenses/ripgrep/"
 
-# 6) 빌드 정보 (앱이 백엔드 버전·프로토콜을 확인한다)
-"$PY" -I -B - "$OUT" "$RG_VER" <<'EOF'
+# 6) cloudflared: 공식 릴리스(Cloudflare Developer ID 서명 — sign-app.sh가 다시 서명하지 않는다) + sha256 고정
+CFD_CACHE="$REPO_ROOT/build/cache/cloudflared-$CFD_VER"
+if [ ! -x "$CFD_CACHE/cloudflared" ]; then
+  mkdir -p "$CFD_CACHE"
+  curl -fsSL "https://github.com/cloudflare/cloudflared/releases/download/$CFD_VER/cloudflared-darwin-arm64.tgz" -o "$CFD_CACHE/cloudflared.tgz"
+  got="$(shasum -a 256 "$CFD_CACHE/cloudflared.tgz" | awk '{print $1}')"
+  [ "$got" = "$CFD_SHA256" ] || { echo "cloudflared sha256 불일치: $got != $CFD_SHA256"; exit 1; }
+  tar -xzf "$CFD_CACHE/cloudflared.tgz" -C "$CFD_CACHE" cloudflared
+  curl -fsSL "https://raw.githubusercontent.com/cloudflare/cloudflared/$CFD_VER/LICENSE" -o "$CFD_CACHE/LICENSE"
+fi
+cp "$CFD_CACHE/cloudflared" "$OUT/bin/cloudflared"
+mkdir -p "$OUT/licenses/cloudflared" && cp "$CFD_CACHE/LICENSE" "$OUT/licenses/cloudflared/"
+
+# 7) 빌드 정보 (앱이 백엔드 버전·프로토콜을 확인한다)
+"$PY" -I -B - "$OUT" "$RG_VER" "$CFD_VER" <<'EOF'
 import json, sys, platform
 from importlib.metadata import version
 from askproject import __protocol__, __version__
 from claude_agent_sdk._cli_version import __cli_version__
 json.dump({"version": __version__, "protocol": __protocol__, "python": platform.python_version(),
-           "claude_cli": __cli_version__, "rg": sys.argv[2], "claude_agent_sdk": version("claude-agent-sdk")},
+           "claude_cli": __cli_version__, "rg": sys.argv[2], "cloudflared": sys.argv[3], "claude_agent_sdk": version("claude-agent-sdk")},
           open(f"{sys.argv[1]}/BUILD_INFO.json", "w"), indent=2)
 EOF
 
-# 7) 확인: git·셸 PATH 없이 뜨는지
+# 8) 확인: git·셸 PATH 없이 뜨는지
 env -i HOME="$HOME" "$PY" -I -B -m askproject --version
 echo "백엔드 번들: $OUT ($(du -sh "$OUT" | cut -f1))"

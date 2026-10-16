@@ -60,7 +60,7 @@ def test_hold_awake_ties_caffeinate_to_bot_pid(monkeypatch):
 def test_bundle_agent_plists_are_relocatable():
     """앱 번들 plist: 절대 경로 없이 BundleProgram(번들 상대)만 — 앱을 옮기거나 업데이트해도 경로가 깨지지 않게"""
     found = {p.stem: plistlib.loads(p.read_bytes()) for p in BUNDLE_AGENTS.glob("*.plist")}
-    assert set(found) == {"com.askproject.bot", "com.askproject.console", "com.askproject.backup"}
+    assert set(found) == {"com.askproject.bot", "com.askproject.console", "com.askproject.backup", "com.askproject.tunnel"}
     for label, d in found.items():
         assert d["Label"] == label and d["BundleProgram"] == "Contents/MacOS/askproject-backend"
         assert not any(str(a).startswith("/") for a in d["ProgramArguments"])
@@ -68,3 +68,5 @@ def test_bundle_agent_plists_are_relocatable():
         assert d["EnvironmentVariables"]["ASKPROJECT_JOB"] == label.rsplit(".", 1)[1]
     assert found["com.askproject.bot"]["KeepAlive"] is True
     assert found["com.askproject.backup"]["ProgramArguments"][-1] == "nightly"
+    # 팀 공유 터널: 설정이 없어 0으로 끝나면 다시 띄우지 않는다(실패일 때만 재시작)
+    assert found["com.askproject.tunnel"]["KeepAlive"] == {"SuccessfulExit": False}
