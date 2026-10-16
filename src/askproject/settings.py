@@ -83,7 +83,7 @@ class Settings(BaseSettings):
     # Slack (Socket Mode)
     slack_bot_token: SecretStr | None = None
     slack_app_token: SecretStr | None = None
-    escalation_channel: str | None = Field(default=None, description="'개발자에게 확인 요청'을 올릴 채널 ID")
+    escalation_channel: str | None = Field(default=None, description="'개발자에게 확인 요청'을 올릴 채널 ID. 비면 host_channel")
     # 봇이 답할 채널 ID(쉼표 구분). 비어 있으면 봇이 초대된 모든 채널 — PAT 권한이 그 채널 전원에게 열리므로 경고한다.
     # DM을 허용하려면 'dm'을 넣는다.
     allowed_channels: str = ""
@@ -160,6 +160,10 @@ class Settings(BaseSettings):
 
     def allowed_channel_ids(self) -> set[str]:
         return {c.strip() for c in self.allowed_channels.split(",") if c.strip()}
+
+    def escalation_channel_id(self) -> str | None:
+        """확인 요청을 올릴 채널. 따로 정하지 않으면 운영 채널(host_channel)을 쓴다."""
+        return self.escalation_channel or self.host_channel or None
 
 
 @lru_cache

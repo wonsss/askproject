@@ -170,7 +170,7 @@ def cmd_serve() -> None:
     async def main() -> None:
         from askproject.slack.heartbeat import Heartbeat
 
-        app = build_app(s.slack_bot_token.get_secret_value(), c.service, c.store, s.escalation_channel, c.llm,
+        app = build_app(s.slack_bot_token.get_secret_value(), c.service, c.store, s.escalation_channel_id(), c.llm,
                         allowed_channels=s.allowed_channel_ids())
         if not s.allowed_channel_ids():
             logging.warning("답할 채널 제한 없음(ASKPROJECT_ALLOWED_CHANNELS) — 봇이 초대된 모든 채널에서 답해요")

@@ -217,7 +217,7 @@ def build_app(bot_token: str, service: AnswerService, store: Store, escalation_c
             await _notice(body, client, "이 답변은 이미 개발 채널에 확인 요청을 올렸어요.")
             return
         await _feedback(ack, body, client, "escalate", "개발 채널에 확인 요청을 올렸어요." if escalation_channel
-                        else "확인 요청 채널이 설정되지 않았어요(ASKPROJECT_ESCALATION_CHANNEL).")
+                        else "확인 요청 채널이 설정되지 않았어요 — 설정 → 채널에서 운영 채널을 고르세요.")
         if not escalation_channel:
             return
         q = store.execute("SELECT question, channel, thread_ts FROM queries WHERE id=?", (query_id,)).fetchone()
