@@ -172,7 +172,7 @@ xcrun notarytool store-credentials askproject --apple-id <Apple ID> --team-id AE
 | 방법 | 어떻게 | 언제 |
 |---|---|---|
 | **GitHub 버튼** (가장 쉬움) | Actions → release → Run workflow → `patch`(기본)·`minor`·`major` 또는 `1.2.3` → Run | 터미널 없이. 봇이 버전을 올려 main에 커밋하고 태그를 붙인 뒤 빌드한다 |
-| **터미널 한 줄** | `bash scripts/release.sh` (patch) · `bash scripts/release.sh minor` | 이 맥에서. 변경 내용을 보여 주고 확인을 받은 뒤 커밋·태그·push(`-y`면 묻지 않음) |
+| **터미널 한 줄** | `make release` (patch) · `make release-minor` · `make release-major` · `make release V=1.2.3` | 이 맥에서. 변경 내용을 보여 주고 확인을 받은 뒤 커밋·태그·push(`-y`면 묻지 않음) |
 | 직접 태그 | 버전을 맞춰 커밋한 뒤 `git tag v1.2.3 && git push origin v1.2.3` | 이미 버전을 올려 둔 경우 |
 
 - 버전은 네 곳(pyproject·`__version__`·uv.lock·개발 앱 Info.plist)에 적혀 있다. `scripts/bump_version.py`가 한 번에 맞추고, 테스트가 어긋나면 실패시킨다. 손으로 고치지 않는다.

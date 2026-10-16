@@ -1,7 +1,7 @@
 #!/bin/bash
 # 릴리스 한 줄: 버전 올리기 → 커밋 → 태그 → push. 빌드·서명·공증·GitHub Release는 CI(release.yml)가 한다.
-#   bash scripts/release.sh            # patch (0.1.0 → 0.1.1)
-#   bash scripts/release.sh minor      # 0.2.0 · major → 1.0.0 · 1.4.2처럼 정확한 버전도 가능
+#   make release                       # patch (0.1.0 → 0.1.1) = bash scripts/release.sh
+#   make release-minor · make release-major · make release V=1.4.2
 #   bash scripts/release.sh patch -y   # 확인 질문 없이
 # 같은 일을 GitHub 화면에서 하려면: Actions → release → Run workflow
 set -euo pipefail

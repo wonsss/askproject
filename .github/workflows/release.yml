@@ -1,6 +1,6 @@
 # 배포: DMG를 빌드·서명·공증해 GitHub Release에 올린다. 시작하는 법은 셋 중 하나.
 #   1) GitHub → Actions → release → Run workflow → patch/minor/major 또는 1.2.3   (버전 올리기·커밋·태그까지 자동)
-#   2) bash scripts/release.sh [patch|minor|major|1.2.3]                         (이 맥에서 같은 일을 하고 태그 push)
+#   2) make release [V=1.2.3] · make release-minor · make release-major           (이 맥에서 같은 일을 하고 태그 push)
 #   3) 직접 태그 push: git tag v0.1.1 && git push origin v0.1.1                  (pyproject version과 같아야 함)
 # 필요한 Secrets·Variables는 docs/packaging.md의 "릴리스 CI" 절.
 name: release

@@ -15,6 +15,8 @@ AskProject: 기획자가 슬랙에서 질문하면 대상 코드베이스와 기
 
 ## 명령
 
+`make`로 자주 쓰는 명령 목록을 본다(test·doctor·sync·serve·console·version·release·app·dmg).
+
 ```bash
 uv run askproject doctor --online   # 환경·연결 점검
 uv run askproject sync              # 레포 동기화 + 코드·구조·문서 인덱싱 + 노션·슬랙 수집
@@ -34,7 +36,7 @@ uv run askproject paths|config get|status --json      # 앱↔백엔드 계약(J
 uv run askproject setup manifest-url|pat-url|check <slack|github|claude>|repos|channels   # 마법사용
 bash scripts/build-app.sh            # 배포 앱(백엔드 내장 + Developer ID 서명) → dist/AskProject.app
 NOTARY_PROFILE=askproject bash scripts/build-dmg.sh   # 공증 + DMG
-bash scripts/release.sh [patch|minor|major|1.2.3]   # 버전 올리기·커밋·태그·push → CI가 DMG 빌드·공증·Release (GitHub Actions 'Run workflow' 버튼도 같음, Secrets는 docs/packaging.md)
+make release [V=1.2.3] · make release-minor · make release-major   # 버전 올리기·커밋·태그·push → CI가 DMG 빌드·공증·Release (GitHub Actions 'Run workflow' 버튼도 같음, Secrets는 docs/packaging.md)
 python3 scripts/bump_version.py --check            # 버전 네 곳 일치 확인 (손으로 고치지 않는다)
 uv run pytest
 ```
