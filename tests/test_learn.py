@@ -161,6 +161,6 @@ async def test_plan_reports_estimate_without_calling_agent(store, repo_cfg, repo
     plan = learner.plan("domains")
     assert learner.runner.request is None
     assert plan["ready"] and plan["materials"]["files"] > 0
-    assert 0 < plan["estimate_usd"] <= plan["max_usd"] <= 2.0
+    assert 0 < plan["estimate_usd"] <= plan["max_usd"] == 2.0
     # 실측 보정: 재료 9천 자·14회 대화에서 실제 $1.09
     assert 0.9 < estimate_usd("claude-sonnet-5-5", 9000, "domains", 14) < 1.3

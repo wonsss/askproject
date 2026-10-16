@@ -608,7 +608,7 @@ def cmd_learn(kind: str, dry_run: bool, apply_ref: str | None, accept: str | Non
             if as_json:
                 print(json.dumps(plan, ensure_ascii=False))
             else:
-                print(f"{kind} 학습 예상 비용 약 ${plan['estimate_usd']:.2f} (최대 ${plan['max_usd']:.2f}, {plan['model']}) · "
+                print(f"{kind} 학습 예상 비용 약 ${plan['estimate_usd']:.2f} (1회 상한 ${plan['max_usd']:.2f}, {plan['model']}) · "
                       f"재료 {plan['materials']}")
                 if plan["reason"]:
                     print(plan["reason"])
@@ -618,7 +618,7 @@ def cmd_learn(kind: str, dry_run: bool, apply_ref: str | None, accept: str | Non
                 sys.exit(2)
             return
         if not as_json:
-            print(f"예상 비용 약 ${plan['estimate_usd']:.2f} (최대 ${plan['max_usd']:.2f}, {plan['model']})")
+            print(f"예상 비용 약 ${plan['estimate_usd']:.2f} (1회 상한 ${plan['max_usd']:.2f}, {plan['model']})")
             if not yes:
                 if not sys.stdin.isatty() or input("계속할까요? [y/N] ").strip().lower() != "y":
                     sys.exit("취소했어요. (확인 없이 실행하려면 --yes)")

@@ -23,6 +23,7 @@
 - 에이전트는 기존 `AgentRunner` 포트로 돌고, 읽기 전용 도구(`list_dir`·`code_search`·`read_code`·`find_screen`·`find_api`·
   `search_docs`·`read_doc`)만 쓴다. 학습용 도구 호출은 감사 로그(`tool_calls`)에 남기지 않는다.
 - 모델 `model_large`(기본 claude-sonnet-5-5), 상한 domains 20회·glossary 16회 대화, 비용 상한 $2.0(api 모드).
+  대화 수 상한은 실측에서 지켜지지 않았다(SDK가 세는 방식이 다름, 42회까지 감) — 실제 안전장치는 금액 상한이다. 1회 실측 $0.77~1.29([cost.md](cost.md)).
 
 ## 검증 (LLM 아님)
 

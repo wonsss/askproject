@@ -52,7 +52,7 @@ enum LearnValue: Decodable {
     var title: String {
         switch self {
         case .domain(let name, _, _, _): return name
-        case .identifiers(let ids): return ids.joined(separator: ", ")
+        case .identifiers: return ""  // 식별자는 detail 줄에만 보여 준다
         }
     }
 
@@ -237,7 +237,7 @@ struct DomainsLearnView: View {
                     if let err = p.error {
                         Text("예상 비용을 계산하지 못했어요: " + err).font(.caption).foregroundStyle(.orange)
                     } else {
-                        Text("예상 약 \(money(p.estimate_usd)) (최대 \(money(p.max_usd))) · \(p.model ?? "")")
+                        Text("예상 약 \(money(p.estimate_usd)) (1회 상한 \(money(p.max_usd))) · \(p.model ?? "")")
                             .font(.callout)
                         if let mt = p.materials {
                             Text("재료: 파일 \(mt.files) · 화면 \(mt.routes) · API \(mt.apis) · 문서 \(mt.docs) · 최근 질문 \(mt.questions)")
@@ -272,7 +272,7 @@ struct DomainsLearnView: View {
             Button("학습하기 (약 \(money(m.plan?.estimate_usd)))") { Task { await m.run() } }
             Button("취소", role: .cancel) {}
         } message: {
-            Text("Claude API를 호출해요. 예상 약 \(money(m.plan?.estimate_usd)), 대화가 길어지면 약 \(money(m.plan?.max_usd))까지 들 수 있어요(1회 상한 $2). "
+            Text("Claude API를 호출해요. 예상 약 \(money(m.plan?.estimate_usd))이고, 대화가 길어지면 더 들어요. api 모드에서는 약 \(money(m.plan?.max_usd))에 이르면 멈춰요. "
                  + "결과는 미리 보기로만 보여 주고, 적용하기 전에는 파일을 바꾸지 않아요.")
         }
     }

@@ -40,9 +40,10 @@ KINDS = ("domains", "glossary")
 FILES = {"domains": "domains.yaml", "glossary": "glossary.yaml"}
 BUDGET_USD = 2.0  # 실제 학습 1회 상한(api 모드). 질문 1건 상한(agent_max_budget_usd)과 따로 둔다
 MAX_TURNS = {"domains": 20, "glossary": 16}
-TYPICAL_TURNS = {"domains": 14, "glossary": 12}
+TYPICAL_TURNS = {"domains": 14, "glossary": 14}
 FINAL_OUTPUT_TOKENS = {"domains": 3500, "glossary": 3000}
-# 실측 보정(2026-10-17, domains 1회: 14회 대화, 캐시 쓰기 38.8만·읽기 24.8만·출력 7천 토큰, $1.09).
+# 실측 보정(2026-10-17, domains 1회: 14회 대화, 캐시 쓰기 38.8만·읽기 24.8만·출력 7천 토큰, $1.09.
+# glossary 1회: SDK 보고 22회, 캐시 쓰기 38.6만·읽기 49.3만·출력 5천 토큰, $1.12 — 금액이 맞게 14회로 둔다).
 # 캐시 읽기는 '앞 맥락 + 대화마다 약 2,200토큰'과 맞았지만, 캐시 쓰기는 대화마다 약 2.9만 토큰씩 새로 들었다.
 FIXED_PROMPT_TOKENS = 3000   # 시스템 프롬프트 + 도구 정의 + CLI 기본 머리말
 TURN_GROWTH_TOKENS = 2200    # 대화 한 번에 늘어나는 맥락(도구 결과) — 캐시 읽기 계산
@@ -512,7 +513,8 @@ class Learner:
             "reason": None if ready else "아직 인덱스가 없어요. 먼저 동기화하세요(askproject sync).",
             "model": self.model, "provider": self.provider, "materials": stats,
             "estimate_usd": estimate_usd(self.model, prompt_chars, kind, TYPICAL_TURNS[kind]),
-            "max_usd": min(BUDGET_USD, estimate_usd(self.model, prompt_chars, kind, MAX_TURNS[kind])),
+            # 대화 수 상한은 SDK가 세는 방식이 달라 실측에서 지켜지지 않았다(glossary 상한 16에 42회) — 금액 상한을 보여 준다
+            "max_usd": BUDGET_USD,
             "max_turns": MAX_TURNS[kind],
             "relearn_hint": self._relearn_hint(kind),
             "items": len(current_items(kind, text)[1]),
