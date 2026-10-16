@@ -23,6 +23,9 @@ make                    # 자주 쓰는 명령 목록
 2. **새로운 외부 통신을 넣지 않습니다.** 꼭 필요하면 [docs/privacy.md](docs/privacy.md)의 표를 함께 고치고 PR 설명에 적어 주세요. 텔레메트리·분석은 받지 않습니다.
 3. **대상 레포의 내부 정보를 커밋하지 않습니다.** 채운 `config/*.yaml`, `eval/golden.yaml`, 실제 답변 스크린샷·코드 경로·커밋 해시·서비스 이름이 해당합니다. 문서·테스트 예시는 가상의 서비스(주문·알림 등)로 씁니다.
 4. 비밀값(`.env`, `secrets/`, `data/`)을 커밋하거나 로그·출력에 남기지 않습니다.
+   - CI(`secrets` 워크플로)가 [gitleaks](https://github.com/gitleaks/gitleaks)로 이력 전체를 검사합니다. 테스트용 가짜 토큰은 `.gitleaks.toml` 허용 목록에 **값 그대로** 넣습니다.
+   - 로컬에서도 push 전에 거르려면 `brew install gitleaks` 뒤 `.git/hooks/pre-push`에서 `gitleaks git --config .gitleaks.toml --log-opts "<원격>..<로컬>"`을 돌리세요.
+   - 자기 대상 레포 이름·도메인 문구처럼 **공개되면 안 되는 문자열**은 규칙 자체가 그 문자열을 드러내므로 레포에 두지 말고, 레포 밖 gitleaks 설정 파일에 넣어 같은 훅에서 한 번 더 돌리세요.
 5. 감사 로그 스키마는 `store/db.py`의 `MIGRATIONS`에 **추가만** 합니다.
 
 ## 커밋·PR
