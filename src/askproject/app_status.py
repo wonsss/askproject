@@ -11,7 +11,7 @@ from pathlib import Path
 
 from askproject import host
 from askproject.paths import eval_results_dir
-from askproject.ops import latest_backup
+from askproject.ops import latest_backup, offsite
 
 
 def _console_info(data_dir: Path) -> dict | None:
@@ -88,7 +88,7 @@ def collect(settings, repo_name: str, web_base: str, port: int = host.CONSOLE_PO
         out.update({"today": {"questions": 0, "cost": 0}, "week": {"questions": 0, "cost": 0}, "check": 0, "recent": []})
     b = latest_backup(settings.backup_dir)
     out["last_backup"] = ({"name": b.name, "age_hours": round((time.time() - b.stat().st_mtime) / 3600, 1),
-                           "offsite": bool(settings.backup_upload_cmd)} if b else None)
+                           "offsite": offsite(settings, b)} if b else None)
     if check_claude:
         from askproject.doctor import claude_preflight
 

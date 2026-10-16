@@ -1,10 +1,12 @@
 import os
 import sqlite3
 import time
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from askproject.ops import backup, latest_backup, maintenance, verify_backup
+from askproject.ops import backup, latest_backup, maintenance, offsite, verify_backup
 from askproject.store.db import REDACTED, SCHEMA_VERSION, QueryResult, Store
 
 
@@ -34,6 +36,39 @@ def test_backup_verify_prune_and_upload(tmp_path):
     assert latest_backup(dest) == r.path
     v = verify_backup(r.path)
     assert v["integrity"] == "ok" and v["queries"] == 1 and v["schema_version"] == SCHEMA_VERSION
+
+
+def test_backup_copies_to_sync_folder_and_prunes_only_own_files(tmp_path):
+    st = Store(tmp_path / "db.sqlite3")
+    _seed(st)
+    sync = tmp_path / "iCloud Drive" / "AskProject"  # 공백 있는 경로
+    sync.mkdir(parents=True)
+    stale = sync / "askproject-20200101-000000.sqlite3"
+    stale.write_bytes(b"x")
+    Path(str(stale) + ".sha256").write_text("x")
+    other = sync / "notes.txt"  # 사용자 파일은 오래돼도 건드리지 않는다
+    other.write_text("keep")
+    for f in (stale, other):
+        os.utime(f, (time.time() - 200 * 86400,) * 2)
+    r = backup(tmp_path / "db.sqlite3", tmp_path / "b", copy_dir=sync, copy_keep_days=90)
+    assert r.copied == sync / r.path.name and r.uploaded is None
+    assert (sync / r.path.name).read_bytes() == r.path.read_bytes()
+    assert (sync / (r.path.name + ".sha256")).read_text().split()[0] == r.sha256
+    assert not stale.exists() and other.exists()
+    assert not list(sync.glob(".*partial"))  # 임시 파일이 남지 않는다
+    s = SimpleNamespace(backup_upload_cmd=None, backup_copy_dir=sync)
+    assert offsite(s, r.path)
+    (sync / r.path.name).unlink()
+    assert not offsite(s, r.path)  # 사본이 실제로 없으면 맥 밖 사본으로 치지 않는다
+    assert offsite(SimpleNamespace(backup_upload_cmd="rclone copy {file} r:x", backup_copy_dir=None), r.path)
+
+
+def test_backup_copy_to_missing_folder_fails_after_local_backup(tmp_path):
+    st = Store(tmp_path / "db.sqlite3")
+    _seed(st)
+    with pytest.raises(RuntimeError, match="백업 사본 폴더가 없습니다"):
+        backup(tmp_path / "db.sqlite3", tmp_path / "b", copy_dir=tmp_path / "unmounted")
+    assert latest_backup(tmp_path / "b")  # 로컬 백업은 이미 남아 있다
 
 
 def test_backup_upload_failure_is_reported(tmp_path):

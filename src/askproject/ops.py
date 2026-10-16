@@ -26,6 +26,7 @@ class BackupResult:
     queries: int
     pruned: list[Path]
     uploaded: bool | None  # None = 업로드 설정 없음
+    copied: Path | None = None  # 백업 사본 폴더(동기화 폴더)에 놓인 사본. None = 설정 없음
 
 
 def _sha256(path: Path) -> str:
@@ -50,11 +51,43 @@ def verify_backup(path: Path) -> dict:
             "latest": time.strftime("%Y-%m-%d %H:%M", time.localtime(last)) if last else "-"}
 
 
-def backup(db_path: Path, dest: Path, keep_days: int = 14, upload_cmd: str | None = None) -> BackupResult:
-    """SQLite 온라인 백업 → 무결성 확인 → sha256 기록 → 오래된 로컬 백업 정리 → (설정 시) 서버 밖으로 복사.
+def _prune(folder: Path, keep_days: int, keep: Path) -> list[Path]:
+    """folder의 askproject-*.sqlite3(와 .sha256) 중 keep_days 지난 것을 지운다. 다른 이름의 파일은 건드리지 않는다."""
+    pruned = []
+    cutoff = time.time() - keep_days * 86400
+    for old in sorted(folder.glob(f"{BACKUP_PREFIX}*{BACKUP_SUFFIX}")):
+        if old.name != keep.name and old.stat().st_mtime < cutoff:
+            old.unlink()
+            Path(str(old) + ".sha256").unlink(missing_ok=True)
+            pruned.append(old)
+    return pruned
+
+
+def copy_to(out: Path, folder: Path, keep_days: int) -> Path:
+    """백업과 .sha256를 동기화 폴더에 복사한다. 임시 이름으로 다 쓴 뒤 rename해서, 동기화 앱이 반쯤 쓴 파일을
+    올리지 않게 한다(.sha256는 본 파일 다음에 놓는다 — sha256가 보이면 본 파일은 이미 완성돼 있다)."""
+    if not folder.is_dir():
+        raise RuntimeError(f"백업 사본 폴더가 없습니다(동기화 앱이 꺼졌거나 폴더를 옮겼나요?): {folder}")
+    for src in (out, Path(str(out) + ".sha256")):
+        tmp = folder / f".{src.name}.partial"
+        try:
+            shutil.copyfile(src, tmp)
+            tmp.replace(folder / src.name)
+        except OSError as exc:
+            tmp.unlink(missing_ok=True)
+            raise RuntimeError(f"백업 사본 폴더에 복사하지 못했습니다: {exc}") from exc
+    _prune(folder, keep_days, out)
+    return folder / out.name
+
+
+def backup(db_path: Path, dest: Path, keep_days: int = 14, upload_cmd: str | None = None,
+           copy_dir: Path | None = None, copy_keep_days: int = 90) -> BackupResult:
+    """SQLite 온라인 백업 → 무결성 확인 → sha256 기록 → 오래된 로컬 백업 정리 → (설정 시) 백업 사본 폴더에 복사
+    → (설정 시) 서버 밖으로 복사.
 
     upload_cmd 예: "rclone copy {file} r2:askproject-backups" — {file} 자리에 백업 파일 경로가 들어간다.
     셸을 거치지 않고 실행한다(쉘 확장·파이프 없음).
+    copy_dir: iCloud Drive·Google Drive 같은 동기화 폴더. 그 폴더의 오래된 사본은 copy_keep_days가 지나면 지운다.
     """
     dest.mkdir(parents=True, exist_ok=True)
     out = dest / f"{BACKUP_PREFIX}{time.strftime('%Y%m%d-%H%M%S')}{BACKUP_SUFFIX}"
@@ -75,13 +108,8 @@ def backup(db_path: Path, dest: Path, keep_days: int = 14, upload_cmd: str | Non
     digest = _sha256(out)
     out.with_suffix(out.suffix + ".sha256").write_text(f"{digest}  {out.name}\n", encoding="utf-8")
 
-    pruned = []
-    cutoff = time.time() - keep_days * 86400
-    for old in sorted(dest.glob(f"{BACKUP_PREFIX}*{BACKUP_SUFFIX}")):
-        if old != out and old.stat().st_mtime < cutoff:
-            old.unlink()
-            Path(str(old) + ".sha256").unlink(missing_ok=True)
-            pruned.append(old)
+    pruned = _prune(dest, keep_days, out)
+    copied = copy_to(out, copy_dir, copy_keep_days) if copy_dir else None
 
     uploaded = None
     if upload_cmd:
@@ -92,7 +120,15 @@ def backup(db_path: Path, dest: Path, keep_days: int = 14, upload_cmd: str | Non
         if r.returncode != 0:
             raise RuntimeError(f"서버 밖 복사 실패({r.returncode}): {r.stderr.strip()[:300]}")
         uploaded = True
-    return BackupResult(out, out.stat().st_size, digest, check["queries"], pruned, uploaded)
+    return BackupResult(out, out.stat().st_size, digest, check["queries"], pruned, uploaded, copied)
+
+
+def offsite(settings, latest: Path) -> bool:
+    """가장 최근 백업이 맥 밖에도 있나: 업로드 명령이 설정됐거나, 백업 사본 폴더에 같은 이름의 사본이 있다."""
+    if getattr(settings, "backup_upload_cmd", None):
+        return True
+    folder = getattr(settings, "backup_copy_dir", None)
+    return bool(folder) and (Path(folder) / latest.name).is_file()
 
 
 def latest_backup(dest: Path) -> Path | None:

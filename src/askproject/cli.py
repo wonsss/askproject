@@ -9,7 +9,7 @@
   askproject host on|off|status|restart       맥북 호스트 모드 (봇·콘솔 상시 실행, 잠자기 방지, 매일 백업)
   askproject provider [api|subscription]      LLM 인증 경로 확인·전환 (subscription=로컬 claude CLI 구독)
   askproject power [default|lid-open|lid-closed]  맥북 절전 모드 확인·전환 (덮개 닫힘은 전원 연결 시만)
-  askproject backup [--dest DIR]              감사 로그 백업 (+ ASKPROJECT_BACKUP_UPLOAD_CMD로 서버 밖 복사)
+  askproject backup [--dest DIR]              감사 로그 백업 (+ 백업 사본 폴더·ASKPROJECT_BACKUP_UPLOAD_CMD로 맥 밖 복사)
   askproject restore-check [백업 파일]         백업 복구 확인 (무결성·질문 수)
   askproject maintenance [--vacuum]           오래된 커밋 스냅숏·WAL 정리
   askproject redact <query_id> --reason "…"   질문 텍스트 가림 (개인정보 유입 시)
@@ -245,8 +245,13 @@ def cmd_backup(dest: str | None, keep_days: int | None) -> None:
     from askproject.settings import Settings
 
     s = Settings()
-    r = backup(s.db_path, Path(dest) if dest else s.backup_dir, keep_days or s.backup_keep_days, s.backup_upload_cmd)
-    up = {None: "서버 밖 복사 설정 없음(ASKPROJECT_BACKUP_UPLOAD_CMD)", True: "서버 밖 복사 완료"}[r.uploaded]
+    r = backup(s.db_path, Path(dest) if dest else s.backup_dir, keep_days or s.backup_keep_days, s.backup_upload_cmd,
+               s.backup_copy_dir, s.backup_copy_keep_days)
+    if r.uploaded or r.copied:
+        up = " · ".join(x for x in ("서버 밖 복사 완료" if r.uploaded else "",
+                                     f"사본 폴더에 복사 {r.copied.parent}" if r.copied else "") if x)
+    else:
+        up = "맥 밖 복사 설정 없음(백업 사본 폴더 또는 ASKPROJECT_BACKUP_UPLOAD_CMD)"
     print(f"백업 {r.path} · {r.bytes / 1e6:.1f}MB · 질문 {r.queries}건 · sha256 {r.sha256[:12]}… · "
           f"오래된 백업 {len(r.pruned)}개 정리 · {up}")
 

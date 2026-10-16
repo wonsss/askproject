@@ -95,6 +95,22 @@ def test_config_set_rejects_invalid(app_home, patch, msg):
         config_store.set_from_json(Settings(), json.dumps(patch))
 
 
+def test_config_set_backup_copy_dir(app_home):
+    home, _ = app_home
+    s = Settings()
+    paths.ensure_app_dirs(s)
+    sync = home / "Library/Mobile Documents/com~apple~CloudDocs/AskProject"
+    sync.mkdir(parents=True)
+    config_store.set_from_json(s, json.dumps({"settings": {"backup_copy_dir": str(sync)}}))
+    assert Settings().backup_copy_dir == sync.resolve()
+    for bad, msg in [(home / "nope", "폴더가 없어요"), (s.backup_dir, "백업 폴더"), (s.backup_dir / "pre-migrate", "백업 폴더")]:
+        bad.mkdir(parents=True, exist_ok=True) if msg != "폴더가 없어요" else None
+        with pytest.raises(Exception, match=msg):
+            config_store.set_from_json(s, json.dumps({"settings": {"backup_copy_dir": str(bad)}}))
+    config_store.set_from_json(s, json.dumps({"settings": {"backup_copy_dir": ""}}))  # 지우기
+    assert Settings().backup_copy_dir is None
+
+
 def test_keychain_rejects_values_that_would_break_quoting():
     with pytest.raises(keychain.KeychainError):
         keychain.put("ANTHROPIC_API_KEY", 'sk-ant-"; rm -rf ~')

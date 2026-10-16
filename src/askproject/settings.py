@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Literal
 
 from dotenv import dotenv_values
-from pydantic import Field, PrivateAttr, SecretStr
+from pydantic import Field, PrivateAttr, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from askproject import paths
@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     backup_dir: Path = Field(default_factory=paths.default_backup_dir, description="로컬 백업 위치")
     backup_keep_days: int = 14
     backup_upload_cmd: str | None = Field(default=None, description="서버 밖 복사 명령. {file}이 백업 경로로 바뀜")
+    # 맥 밖 보관을 쉽게: iCloud Drive·Google Drive 같은 동기화 폴더. 백업할 때마다 .sqlite3·.sha256를 여기에도 복사한다.
+    # 이 폴더의 askproject-*.sqlite3만 backup_copy_keep_days가 지나면 지운다(다른 파일은 건드리지 않는다)
+    backup_copy_dir: Path | None = None
+    backup_copy_keep_days: int = 90
     config_dir: Path = Field(default_factory=paths.default_config_dir)
 
     # Claude
@@ -111,6 +115,12 @@ class Settings(BaseSettings):
     read_max_lines: int = 200
 
     _env_path: Path = PrivateAttr(default=Path(".env"))
+
+    @field_validator("backup_copy_dir", mode="before")
+    @classmethod
+    def _empty_path(cls, v):
+        # 빈 값(ASKPROJECT_BACKUP_COPY_DIR=)이 Path("") = 현재 폴더가 되지 않게
+        return None if isinstance(v, str) and not v.strip() else v
 
     def __init__(self, **values):
         # 설정 파일 위치도 실행 모드별이다(개발 .env, 앱 config/settings.env)

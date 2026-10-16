@@ -55,6 +55,27 @@ class SettingsPatch(BaseModel):
     console_public_host: str | None = None
     cf_access_team_domain: str | None = None
     cf_access_aud: str | None = None
+    # 맥 밖 보관: iCloud Drive·Google Drive 같은 동기화 폴더(백업할 때마다 사본을 둔다)
+    backup_copy_dir: str | None = None
+
+    @field_validator("backup_copy_dir")
+    @classmethod
+    def _copy_dir(cls, v: str | None, info) -> str | None:
+        if not v:
+            return v
+        import os
+
+        p = Path(v.strip()).expanduser().resolve()
+        if not p.is_dir():
+            raise ValueError(f"폴더가 없어요: {p}")
+        if not os.access(p, os.W_OK):
+            raise ValueError(f"이 폴더에 쓸 수 없어요: {p}")
+        backup_dir = (info.context or {}).get("backup_dir")
+        if backup_dir is not None:
+            b = Path(backup_dir).expanduser().resolve()
+            if p == b or b in p.parents:
+                raise ValueError("백업 폴더 자체나 그 안의 폴더는 고를 수 없어요. iCloud Drive처럼 맥 밖으로 동기화되는 폴더를 고르세요.")
+        return str(p)
 
     @field_validator("allowed_channels", "slack_source_channels")
     @classmethod
@@ -198,6 +219,6 @@ def write_repos(config_dir: Path, repos: list[dict]) -> None:
 
 
 def set_from_json(settings: Settings, text: str) -> dict:
-    patch = ConfigPatch.model_validate(json.loads(text))
+    patch = ConfigPatch.model_validate(json.loads(text), context={"backup_dir": settings.backup_dir})
     changed = apply(settings, patch)
     return {"ok": True, "changed": changed}

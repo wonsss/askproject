@@ -48,7 +48,7 @@ def db_checks(s: Settings, st) -> list[Check]:
     import shutil
     import time
 
-    from askproject.ops import latest_backup
+    from askproject.ops import latest_backup, offsite
     from askproject.store.db import SCHEMA_VERSION
 
     out = []
@@ -67,7 +67,8 @@ def db_checks(s: Settings, st) -> list[Check]:
     else:
         age_h = (time.time() - last.stat().st_mtime) / 3600
         out.append(Check(OK if age_h < 36 else WARN, "최근 백업", f"{last.name} · {age_h:.0f}시간 전"
-                         + ("" if s.backup_upload_cmd else " · 서버 밖 복사 미설정"), required=False))
+                         + ("" if offsite(s, last) else " · 맥 밖 사본 없음(설정 → 맥 운영 → 백업 사본 폴더)"),
+                         required=False))
     return out
 
 
