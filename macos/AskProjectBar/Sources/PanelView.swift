@@ -119,6 +119,7 @@ struct PanelView: View {
                 Menu("더 보기") {
                     Button("설정 마법사 다시 열기") { WindowManager.shared.showWizard() }
                     Button("데이터와 개인정보") { WindowManager.shared.showPrivacy() }
+                    Button("백업에서 복구…") { WindowManager.shared.showRestore() }
                     Button("진단 묶음 만들기…") { model.diagnostics() }
                     if Updater.shared.available {
                         Button("업데이트 확인…") { Updater.shared.checkForUpdates() }

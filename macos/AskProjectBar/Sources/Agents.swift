@@ -76,6 +76,21 @@ enum Agents {
         }
     }
 
+    /// 복구 직전: 켜져 있는(등록된) 작업만 멈추고 그 이름을 돌려준다. 등록은 그대로 둬서 resume으로 다시 띄운다.
+    static func pauseEnabled(_ list: [String]) -> [String] {
+        let on = list.filter { service($0).status == .enabled }
+        for n in on { launchctl(["bootout", "gui/\(getuid())/\(label(n))"]) }
+        return on
+    }
+
+    /// pauseEnabled로 멈춘 작업을 다시 띄운다(재등록 — bootout한 작업은 kickstart로는 살아나지 않는다).
+    static func resume(_ list: [String]) {
+        for n in list {
+            try? service(n).unregister()
+            try? service(n).register()
+        }
+    }
+
     static func restart(_ name: String) {
         launchctl(["kickstart", "-k", "gui/\(getuid())/\(label(name))"])
     }

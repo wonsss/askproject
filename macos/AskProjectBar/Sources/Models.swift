@@ -222,3 +222,57 @@ enum Health {
         }
     }
 }
+
+struct BackupItem: Decodable, Identifiable, Hashable {
+    let name: String
+    let path: String
+    let kind: String          // daily | pre-migrate | pre-restore | copy
+    let bytes: Int
+    let mtime: Double
+    let sha256_ok: Bool?      // nil = .sha256 기록 없음
+    let queries: Int?
+    let schema_version: Int?
+    let latest_ts: Double?
+    let error: String?
+    var id: String { path }
+
+    var kindLabel: String {
+        switch kind {
+        case "daily": return "매일 백업"
+        case "pre-migrate": return "업데이트 직전"
+        case "pre-restore": return "복구 직전"
+        case "copy": return "사본 폴더"
+        default: return "직접 고른 파일"
+        }
+    }
+}
+
+struct BackupList: Decodable {
+    let backup_dir: String
+    let copy_dir: String?
+    let backups: [BackupItem]
+}
+
+struct BackupCheck: Decodable {
+    let ok: Bool
+    let path: String?
+    let sha256_ok: Bool?
+    let problems: [String]?
+    let integrity: String?
+    let schema_version: Int?
+    let queries: Int?
+    let results: Int?
+    let latest: String?
+    let error: String?
+}
+
+struct RestoreResult: Decodable {
+    let ok: Bool
+    let error: String?
+    let restored_from: String?
+    let moved_aside: [String]?
+    let pre_restore_backup: String?
+    let pre_restore_error: String?
+    let queries: Int?
+    let latest: String?
+}

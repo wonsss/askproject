@@ -27,6 +27,13 @@ final class WindowManager {
         privacy = show(privacy, title: "데이터와 개인정보", view: PrivacyDetailView())
     }
 
+    private var restore: NSWindow?
+
+    func showRestore() {
+        if let w = restore, !w.isVisible { restore = nil }  // 닫은 창은 새로 열어 목록을 다시 읽는다
+        restore = show(restore, title: "백업에서 복구", view: RestoreView())
+    }
+
     func closeWizard() {
         wizard?.close()
     }

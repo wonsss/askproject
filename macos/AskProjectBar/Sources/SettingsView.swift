@@ -557,6 +557,7 @@ struct SettingsView: View {
                     .disabled(m.working)
                 }
                 Spacer()
+                Button("백업에서 복구…") { WindowManager.shared.showRestore() }
                 Button("지금 백업") { app.backupNow() }.disabled(app.busy != nil)
             }
             Text("오래된 사본은 90일이 지나면 그 폴더에서 정리해요(askproject-로 시작하는 백업 파일만). 사본에는 질문·답 원문이 들어 있으니 팀 공유 폴더가 아닌 개인 폴더를 고르세요.")
