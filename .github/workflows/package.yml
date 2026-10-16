@@ -1,0 +1,64 @@
+# macOS 패키징 검사: 번들 관련 파일이 바뀐 push·PR마다 서명 없이 앱을 조립해 본다. 비밀값·공증 없음.
+# 릴리스(release.yml)에서야 드러나던 문제 — 내장 바이너리 다운로드·sha256, Swift 컴파일, 번들 검사,
+# claude·cloudflared 원래 서명 유지, 번들 런처 실행 — 를 미리 잡는다.
+# macOS 러너는 분 단가가 높아 paths로 좁힌다(코드 로직은 test.yml이 리눅스에서 본다).
+name: package
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/**"
+      - "macos/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "src/askproject/defaults/**"
+      - ".github/workflows/package.yml"
+  pull_request:
+    paths:
+      - "scripts/**"
+      - "macos/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "src/askproject/defaults/**"
+      - ".github/workflows/package.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unsigned-app:
+    runs-on: macos-15  # arm64 (앱은 arm64 전용)
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+
+      - name: 내려받은 바이너리 캐시 (rg·cloudflared·Sparkle — 버전·sha256은 스크립트에 고정)
+        uses: actions/cache@v6.1.0
+        with:
+          path: build/cache
+          key: bundle-cache-${{ hashFiles('scripts/build-backend-bundle.sh', 'scripts/fetch-sparkle.sh') }}
+
+      - name: 서명 없이 앱 조립 (번들 검사·내장 바이너리 서명 확인 포함)
+        run: SIGN=0 bash scripts/build-app.sh
+
+      - name: 번들 런처로 백엔드 실행
+        run: |
+          APP=dist/unsigned/AskProject.app
+          L="$APP/Contents/MacOS/askproject-backend"
+          T="$RUNNER_TEMP/askproject"
+          export ASKPROJECT_DATA_DIR="$T/data" ASKPROJECT_CONFIG_DIR="$T/config" ASKPROJECT_LOG_DIR="$T/logs" \
+                 ASKPROJECT_CACHE_DIR="$T/cache" ASKPROJECT_BACKUP_DIR="$T/backups"
+          env -i HOME="$HOME" PATH=/usr/bin:/bin "$L" --version
+          "$L" paths --json | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["mode"]=="app" and d["rg"], d'
+          "$L" setup check tunnel | tee "$T/tunnel.json"
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["ok"] is False and "비어 있는 항목" in d["detail"], d' "$T/tunnel.json"
+          "$APP/Contents/Resources/backend/bin/cloudflared" --version
+          ls "$APP/Contents/Library/LaunchAgents"
+          { echo "✅ 서명 없는 앱 조립 성공 — $(du -sh "$APP" | cut -f1)"; echo; echo '```'; cat "$APP/Contents/Resources/backend/BUILD_INFO.json"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

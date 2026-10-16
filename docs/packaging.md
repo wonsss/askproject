@@ -170,6 +170,7 @@ xcrun notarytool store-credentials askproject --apple-id <Apple ID> --team-id AE
 | 워크플로 | 언제 | 하는 일 |
 |---|---|---|
 | `.github/workflows/test.yml` | main push·PR | 리눅스에서 `uv run pytest` (비밀값·API 비용 없음) |
+| `.github/workflows/package.yml` | 번들 관련 파일(`scripts/`·`macos/`·`pyproject.toml`·`uv.lock`·`defaults/`)이 바뀐 main push·PR, 버튼 | macos-15에서 `SIGN=0 build-app.sh`(번들 검사·`check-vendor-signatures.sh` 포함) → 번들 런처로 `--version`·`paths`·`setup check tunnel` 실행. 비밀값·공증 없음. 릴리스 때에야 드러나던 패키징 문제를 미리 잡는다 |
 | `.github/workflows/release.yml` | 버튼 실행 또는 `v*` 태그 push | 준비(버전·main·중복 확인, 버튼이면 버전 올려 커밋·태그) → macos-15(arm64)에서 테스트 → 임시 Keychain에 인증서 → `build-dmg.sh`(API 키로 공증) → appcast 서명 → GitHub Release에 DMG·`.sha256`·`appcast.xml` 첨부 → 비밀값 정리 |
 
 ### 릴리스하는 법 (셋 중 아무거나)
