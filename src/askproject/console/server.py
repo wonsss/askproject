@@ -57,7 +57,8 @@ class CloudflareAccess:
 
         try:
             key = self._jwks.get_signing_key_from_jwt(token).key
-            jwt.decode(token, key, algorithms=["RS256"], audience=self.audience, issuer=self.issuer)
+            jwt.decode(token, key, algorithms=["RS256"], audience=self.audience, issuer=self.issuer,
+                       options={"require": ["exp", "iss", "aud"]})  # 만료 없는 토큰은 받지 않는다
             return True
         except Exception:
             return False
