@@ -27,12 +27,16 @@ final class SettingsModel: ObservableObject {
     @Published var shareOn = false
     @Published var shareCheck: CheckResult?
     @Published var checkingShare = false
+    @Published var notionRoot = ""
+    @Published var checks: [String: CheckResult] = [:]
+    @Published var checking: String?
 
     func load() async {
         let (c, out) = await Backend.json(ConfigState.self, ["config", "get", "--json"])
         config = c
         if c == nil { note = CheckResult(ok: false, detail: "설정을 읽지 못했어요: " + out.errorLine, step: nil) }
         repos = c?.repos ?? []
+        notionRoot = c?.settings.notion_root_page_id ?? ""
         allowedText = c?.settings.allowed_channels ?? ""
         hostChannel = c?.settings.host_channel ?? ""
         escalation = c?.settings.escalation_channel ?? ""
@@ -88,6 +92,18 @@ final class SettingsModel: ObservableObject {
         }
         shareOn = Agents.tunnelEnabled
         shareCheck = nil
+    }
+
+    /// 연결 탭의 서비스별 확인(`setup check slack|github|claude`). 저장된 값으로 확인한다.
+    func check(_ target: String) async {
+        checking = target
+        let (r, out) = await Backend.json(CheckResult.self, ["setup", "check", target])
+        checking = nil
+        checks[target] = r ?? CheckResult(ok: false, detail: out.errorLine, step: target)
+    }
+
+    var notionRootChanged: Bool {
+        notionRoot.trimmingCharacters(in: .whitespaces) != (config?.settings.notion_root_page_id ?? "")
     }
 
     func checkShare() async {
@@ -160,45 +176,107 @@ struct SettingsView: View {
         .task { await m.load() }
     }
 
-    private static let secretRows: [(key: String, title: String, prefix: String)] = [
-        ("ASKPROJECT_SLACK_BOT_TOKEN", "슬랙 봇 토큰", "xoxb-"),
-        ("ASKPROJECT_SLACK_APP_TOKEN", "슬랙 앱 토큰", "xapp-"),
-        ("ASKPROJECT_GITHUB_TOKEN", "GitHub 토큰", "github_pat_"),
-        ("ANTHROPIC_API_KEY", "Claude API 키", "sk-ant-"),
-        ("ASKPROJECT_NOTION_TOKEN", "노션 통합 토큰 (선택)", ""),
-    ]
-
     private var connections: some View {
         SettingsPage {
-            SectionHeader("토큰과 키", "Keychain에 저장돼요. 바꿀 항목만 새로 붙여넣고 저장하세요.")
-            ForEach(Self.secretRows, id: \.key) { row in
-                let binding = Binding(get: { m.secrets[row.key] ?? "" }, set: { m.secrets[row.key] = $0 })
-                TokenField(title: row.title, placeholder: row.prefix.isEmpty ? "" : row.prefix + "…", text: binding,
-                           problem: row.prefix.isEmpty ? nil : WizardModel.prefixProblem(binding.wrappedValue, row.prefix, row.title),
-                           saved: m.config?.secrets[row.key] ?? false)
-                if row.key == "ASKPROJECT_GITHUB_TOKEN", let t = app.status?.github_token, let d = t.days_left {
-                    HStack {
-                        Text("만료까지 \(Int(d.rounded()))일").font(.caption).foregroundStyle(t.warning ? .orange : .secondary)
-                        Button("새 토큰 만들기") {
-                            Task {
-                                let (u, _) = await Backend.json(URLResult.self, ["setup", "pat-url"])
-                                if let u, let url = URL(string: u.url) { NSWorkspace.shared.open(url) }
-                            }
-                        }
-                        .buttonStyle(.link).font(.caption)
+            Text("값은 이 맥의 Keychain에 저장돼요. 바꿀 항목만 새로 붙여넣고 저장하세요. 비워 둔 칸은 저장된 값을 그대로 써요.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+
+            connectionGroup("슬랙", "슬랙 앱을 다시 설치했거나 토큰을 재발급했다면 여기에 새로 넣어 주세요.", check: "slack") {
+                Button("슬랙 앱 관리 열기") { NSWorkspace.shared.open(URL(string: "https://api.slack.com/apps")!) }
+            } fields: {
+                secretField("ASKPROJECT_SLACK_BOT_TOKEN", "봇 토큰 — 앱 고르기 → Install App → Bot User OAuth Token", prefix: "xoxb-")
+                secretField("ASKPROJECT_SLACK_APP_TOKEN",
+                            "앱 토큰 — Basic Information → App-Level Tokens → Generate (connections:write)", prefix: "xapp-")
+            }
+
+            connectionGroup("GitHub", "레포 내용 읽기(contents: read)만 있는 토큰이에요. 90일 뒤 만료되니 새로 만들어 붙여넣으세요. 'Repository access'에서 봇이 읽을 레포를 고르면 돼요.",
+                            check: "github") {
+                Button("새 토큰 만들기 열기") {
+                    Task {
+                        let (u, _) = await Backend.json(URLResult.self, ["setup", "pat-url"])
+                        if let u, let url = URL(string: u.url) { NSWorkspace.shared.open(url) }
                     }
-                    .padding(.top, -6)
                 }
+                Button("내 토큰 목록 열기") {
+                    NSWorkspace.shared.open(URL(string: "https://github.com/settings/personal-access-tokens")!)
+                }
+            } fields: {
+                secretField("ASKPROJECT_GITHUB_TOKEN", "토큰", prefix: "github_pat_")
+                if let t = app.status?.github_token, let d = t.days_left {
+                    Text("만료까지 \(Int(d.rounded()))일").font(.caption).foregroundStyle(t.warning ? .orange : .secondary)
+                }
+            }
+
+            connectionGroup("Claude", "Claude Console에서 키를 만들고 크레딧을 충전하세요. 워크스페이스 사용 한도를 걸어 두길 권해요. 확인에는 약 $0.00001이 들어요.",
+                            check: "claude") {
+                Button("API 키 열기") { NSWorkspace.shared.open(URL(string: "https://console.anthropic.com/settings/keys")!) }
+                Button("결제·한도 열기") { NSWorkspace.shared.open(URL(string: "https://console.anthropic.com/settings/billing")!) }
+            } fields: {
+                secretField("ANTHROPIC_API_KEY", "API 키", prefix: "sk-ant-")
+            }
+
+            connectionGroup("노션 (선택)", nil, check: nil) {
+                Button("노션 연결 관리 열기") {
+                    NSWorkspace.shared.open(URL(string: "https://app.notion.com/developers/connections")!)
+                }
+            } fields: {
+                VStack(alignment: .leading, spacing: 4) {
+                    shareStep(1, "노션 설정 → 연결 → 개발자 도구 → 신규 연결. 이름은 AskProject, 인증 방법은 API 토큰이에요.")
+                    shareStep(2, "구성 탭에서 기능은 '콘텐츠 읽기'만 켜고, 토큰(ntn_…)을 아래에 붙여넣으세요.")
+                    shareStep(3, "기획 문서 최상위 페이지 → ⋯ → 연결 → 연결 추가 → AskProject. 하위 페이지도 함께 읽어요.")
+                    shareStep(4, "그 페이지 주소 끝 32자리를 최상위 페이지 ID에 넣으세요. 다음 동기화부터 반영돼요.")
+                }
+                secretField("ASKPROJECT_NOTION_TOKEN", "API 토큰", prefix: "", placeholder: "ntn_…")
+                LabeledField("최상위 페이지 ID", placeholder: "주소 끝 32자리", text: $m.notionRoot)
             }
         } footer: {
             Spacer()
             Button("저장") {
                 let filled = m.secrets.filter { !$0.value.isEmpty }.mapValues { $0.trimmingCharacters(in: .whitespaces) }
-                Task { await m.save(secrets: filled) }
+                let settings: [String: Any] = m.notionRootChanged
+                    ? ["notion_root_page_id": m.notionRoot.trimmingCharacters(in: .whitespaces)] : [:]
+                Task { await m.save(settings: settings, secrets: filled) }
             }
             .buttonStyle(.borderedProminent)
-            .disabled(m.working || m.secrets.values.allSatisfy(\.isEmpty))
+            .disabled(m.working || (m.secrets.values.allSatisfy(\.isEmpty) && !m.notionRootChanged))
         }
+    }
+
+    /// 서비스 하나: 제목·설명 → 바로 가기 링크 → 입력 칸 → (있으면) 저장된 값으로 연결 확인.
+    private func connectionGroup<Links: View, Fields: View>(
+        _ title: String, _ subtitle: String?, check: String?,
+        @ViewBuilder links: () -> Links, @ViewBuilder fields: () -> Fields
+    ) -> some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                SectionHeader(title, subtitle)
+                HStack {
+                    links()
+                    Spacer()
+                    if let check {
+                        Button(m.checking == check ? "확인 중…" : "연결 확인") { Task { await m.check(check) } }
+                            .disabled(m.checking != nil)
+                            .help("저장된 값으로 확인해요. 새로 붙여넣은 값은 저장한 뒤 확인하세요.")
+                    }
+                }
+                .controlSize(.small)
+                fields()
+                if let check, let r = m.checks[check] { NoteView(note: r) }
+            }
+            .padding(6)
+        }
+    }
+
+    private func secretField(_ key: String, _ title: String, prefix: String, placeholder: String? = nil) -> some View {
+        let binding = Binding(get: { m.secrets[key] ?? "" }, set: { m.secrets[key] = $0 })
+        let problem: String? = {
+            if prefix.isEmpty { return nil }
+            if prefix == "github_pat_", binding.wrappedValue.hasPrefix("ghp_") { return nil }  // classic도 받는다
+            if prefix == "xapp-", binding.wrappedValue.hasPrefix("xoxb-") { return "봇 토큰이 아니라 앱 수준 토큰(xapp-)을 넣어 주세요" }
+            return WizardModel.prefixProblem(binding.wrappedValue, prefix, title.components(separatedBy: " — ")[0])
+        }()
+        return TokenField(title: title, placeholder: placeholder ?? (prefix.isEmpty ? "" : prefix + "…"), text: binding,
+                          problem: problem, saved: m.config?.secrets[key] ?? false)
     }
 
     private var reposTab: some View {
