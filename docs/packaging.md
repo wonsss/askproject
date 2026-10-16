@@ -93,7 +93,7 @@ xcrun notarytool store-credentials askproject --apple-id <Apple ID> --team-id AE
 
 ## 설정 마법사
 
-환영 → 슬랙 앱(매니페스트 미리 채움 `api.slack.com/apps?new_app=1&manifest_json=…`, xoxb·xapp 접두사 즉시 검증, `apps.connections.open`으로 앱 토큰 확인, 관리자 승인 대기 상태 저장·재개, 요청 문구 복사) → GitHub(PAT 미리 채움 `github.com/settings/personal-access-tokens/new?name=…&expires_in=90&contents=read[&target_name=조직]`, `/user/repos`로 레포 고르기) → Claude API 키(1토큰 확인) → 답할 채널(봇이 들어간 채널 체크·DM 허용·운영 채널) → `doctor --online` → 켜기(`sync` 후 SMAppService 등록, 로그인 항목 승인 안내).
+환영 → 슬랙 앱(매니페스트 미리 채움 `api.slack.com/apps?new_app=1&manifest_json=…`, xoxb·xapp 접두사 즉시 검증, `apps.connections.open`으로 앱 토큰 확인, 관리자 승인 대기 상태 저장·재개, 요청 문구 복사) → GitHub(PAT 미리 채움 `github.com/settings/personal-access-tokens/new?name=…&expires_in=90&contents=read[&target_name=조직]`, `/user/repos`로 레포 고르기) → Claude API 키(1토큰 확인) → 답할 채널(봇이 들어간 채널 체크·DM 허용·운영 채널) → `doctor --online` → 켜기(`sync` 후 SMAppService 등록, 로그인 항목 승인 안내) → 팀 공유(선택, 설정 → 팀 공유와 같은 `TeamShareView`: 단계마다 Cloudflare 바로 가기·문서 링크와 그 단계 값의 입력 칸, 설치 명령 통째 붙여넣기·팀 이름만 넣기 허용).
 
 진행 단계는 UserDefaults(`wizard.step`)에 저장한다. 슬랙 승인이 며칠 걸려도 이어서 할 수 있다.
 

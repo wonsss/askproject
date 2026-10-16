@@ -150,17 +150,19 @@ uv run askproject redact <query_id> --reason "질문에 실명·연락처 포함
 터미널 없이 대시보드와 앱 화면만 쓴다. `cloudflared`는 앱에 들어 있다(Cloudflare 서명 유지, `--no-autoupdate`).
 
 1. Cloudflare에 도메인을 연결해 둔다(필수). Zero Trust는 50명까지 무료.
-2. Zero Trust → Networks → Tunnels → **Create a tunnel**(Cloudflared). 설치 명령은 실행하지 않고, `eyJ…` 토큰(또는 명령 전체)을 앱의 **터널 토큰**에 붙여 넣는다.
-3. 같은 터널의 **Public hostname**: `askproject.<도메인>` → 서비스 `HTTP` · `127.0.0.1:8787`.
-4. Access → Applications → **Self-hosted** 앱을 같은 주소로 만들고 Allow 정책에 팀원 이메일을 넣는다. Overview의 **AUD 태그**를 앱에 붙여 넣는다.
-5. 팀 도메인(`<팀>.cloudflareaccess.com`, Zero Trust → Settings)을 넣고 **저장** → **팀 공유 켜기** → **연결 확인**.
+2. **Networking → Tunnels → Create a tunnel**(Cloudflared) — [바로 가기](https://dash.cloudflare.com/?to=/:account/tunnels). 설치 명령은 실행하지 않고, 명령 전체(또는 `eyJ…` 토큰)를 앱의 **터널 토큰**에 붙여 넣고 **저장하고 터널 켜기**. 대시보드는 터널이 연결돼야 **Continue**가 켜진다 — 그래서 터널은 토큰만으로 뜬다(Access 값이 없는 동안 콘솔은 공개 주소 요청을 421·403으로 거절).
+3. **Continue** → **Published application**(이미 만든 터널이면 터널 → **Routes** 탭 → **Add route**): `askproject.<도메인>`, Service URL `http://127.0.0.1:8787`.
+4. **Zero Trust → Access controls → Applications → Create new application → Self-hosted** — [바로 가기](https://dash.cloudflare.com/?to=/:account/one/access-controls/apps). 같은 주소로 만들고 Allow 정책에 팀원 이메일을 넣는다. 만든 앱의 **Additional settings 탭 → AUD tag**를 앱에 붙여 넣는다.
+5. 앱의 **공개 주소에서 찾기**로 팀 도메인을 채운다(`setup team-domain --host …`가 Access 로그인 리다이렉트 `https://<팀>.cloudflareaccess.com/…`에서 읽는다). 직접 넣으려면 Zero Trust → Overview → Account details → Team domain. → **저장** → **팀 공유 켜기** → **연결 확인**.
+
+앱 화면은 단계마다 위 바로 가기·문서 링크와 그 단계 값의 입력 칸을 붙여 둔다(`TeamShareView.swift`, 설정 → 팀 공유와 마법사 마지막 단계). 대시보드 링크는 `?to=/:account/…` 형식(대시보드가 현재 계정으로 바꿔 줌)이고, 터널 토큰을 넣으면 토큰의 계정·터널 ID로 그 터널의 Routes·Access 앱 화면을 바로 연다. 경로는 `CloudflareDash`(`TeamShareView.swift`) 한곳에 있다. 대시보드 개편 때 경로가 바뀌므로(예: 문서의 `one/access/apps`는 2026-10 기준 404, 현재 `one/access-controls/apps`) 깨지면 거기만 고친다.
 
 | 항목 | 값 |
 | --- | --- |
 | 저장 위치 | 주소·팀 도메인·AUD는 `settings.env`(`config set`), 터널 토큰은 Keychain `ASKPROJECT_CLOUDFLARE_TUNNEL_TOKEN` |
-| 상시 실행 | SMAppService 에이전트 `com.askproject.tunnel`(`askproject tunnel`). 봇 켜기·끄기와 따로 움직이고, 설정이 비면 띄우지 않고 끝난다 |
+| 상시 실행 | SMAppService 에이전트 `com.askproject.tunnel`(`askproject tunnel`). 봇 켜기·끄기와 따로 움직이고, 토큰이 없으면 띄우지 않고 끝난다(나머지 값은 없어도 뜬다) |
 | 격리 | 빈 `--config`(데이터 폴더의 `cloudflared.yml`)를 줘서 `~/.cloudflared/config.yml`을 읽지 않는다. 토큰은 인자가 아니라 `TUNNEL_TOKEN` 환경변수(다른 환경변수는 넘기지 않는다 — cloudflared가 시작 로그에 환경변수를 찍고 `TUNNEL_TOKEN`만 가린다) |
-| 연결 확인 | `askproject setup check tunnel`: 빈 항목 → 토큰 형식 → cloudflared → 이 터널의 `/ready` 연결 수(실행마다 빈 포트를 골라 `data/tunnel.json`에 적는다 — 따로 띄운 cloudflared와 섞이지 않게) → Access 팀 키 → 공개 주소가 Access 로그인으로 넘어가는지. 로그인 없이 응답하면(Access 앱 누락) 실패로 알린다 |
+| 연결 확인 | `askproject setup check tunnel`: 빈 항목 → 토큰 형식 → cloudflared → 이 터널의 `/ready` 연결 수(실행마다 빈 포트를 골라 `data/tunnel.json`에 적는다 — 따로 띄운 cloudflared와 섞이지 않게) → Access 팀 키 → 공개 주소가 Access 로그인으로 넘어가는지(넘겨 주는 팀 도메인이 저장 값과 같은지도). 로그인 없이 응답하면(Access 앱 누락) 실패로 알린다 |
 | 로그 | `~/Library/Logs/AskProject/tunnel.log` |
 | 끄기 | 앱에서 **팀 공유 켜기**를 끈다. 완전 철거는 대시보드에서 터널·Access 앱 삭제 |
 
