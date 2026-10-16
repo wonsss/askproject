@@ -25,8 +25,6 @@ SITE="$BACKEND/python/lib/python3.12/site-packages"
     lic="$(sed -n 's/^License-Expression: //p;s/^License: //p' "$d/METADATA" | head -1)"
     echo
     echo "== $name $ver${lic:+ ($lic)} =="
-    for f in $(find "$d" -type f \( -iname 'LICEN[CS]E*' -o -iname 'COPYING*' -o -iname 'NOTICE*' \) 2>/dev/null); do
-      cat "$f"; echo
-    done
+    find "$d" -type f \( -iname 'LICEN[CS]E*' -o -iname 'COPYING*' -o -iname 'NOTICE*' \) -exec cat {} \; -exec echo \; 2>/dev/null || true
   done
 } > "$OUT"
