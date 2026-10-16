@@ -44,6 +44,8 @@ cp "$REPO_ROOT"/macos/LaunchAgents/*.plist "$APP/Contents/Library/LaunchAgents/"
 ditto "$BACKEND" "$APP/Contents/Resources/backend"
 
 bash "$REPO_ROOT/scripts/collect-licenses.sh" "$APP/Contents/Resources/backend" "$APP/Contents/Resources/THIRD_PARTY_NOTICES.txt"
+{ echo; echo "== Sparkle $(cat "$SPARKLE/VERSION") (Contents/Frameworks/Sparkle.framework) =="; cat "$SPARKLE/LICENSE"; } \
+  >> "$APP/Contents/Resources/THIRD_PARTY_NOTICES.txt"
 bash "$REPO_ROOT/scripts/check-bundle.sh" "$APP"
 
 if [ "${SIGN:-1}" = "1" ]; then
