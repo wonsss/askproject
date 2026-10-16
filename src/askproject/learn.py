@@ -40,11 +40,14 @@ KINDS = ("domains", "glossary")
 FILES = {"domains": "domains.yaml", "glossary": "glossary.yaml"}
 BUDGET_USD = 2.0  # 실제 학습 1회 상한(api 모드). 질문 1건 상한(agent_max_budget_usd)과 따로 둔다
 MAX_TURNS = {"domains": 20, "glossary": 16}
-TYPICAL_TURNS = {"domains": 12, "glossary": 10}
+TYPICAL_TURNS = {"domains": 14, "glossary": 12}
 FINAL_OUTPUT_TOKENS = {"domains": 3500, "glossary": 3000}
+# 실측 보정(2026-10-17, domains 1회: 14회 대화, 캐시 쓰기 38.8만·읽기 24.8만·출력 7천 토큰, $1.09).
+# 캐시 읽기는 '앞 맥락 + 대화마다 약 2,200토큰'과 맞았지만, 캐시 쓰기는 대화마다 약 2.9만 토큰씩 새로 들었다.
 FIXED_PROMPT_TOKENS = 3000   # 시스템 프롬프트 + 도구 정의 + CLI 기본 머리말
-TURN_GROWTH_TOKENS = 1800    # 대화 한 번에 늘어나는 맥락(도구 결과)
-TURN_OUTPUT_TOKENS = 350
+TURN_GROWTH_TOKENS = 2200    # 대화 한 번에 늘어나는 맥락(도구 결과) — 캐시 읽기 계산
+TURN_CACHE_WRITE_TOKENS = 29000  # 대화 한 번에 새로 캐시에 쓰는 양(실측)
+TURN_OUTPUT_TOKENS = 250
 CHARS_PER_TOKEN = 3          # 경로·영문 위주 재료. 한국어가 많으면 더 든다(보수적으로 잡음)
 KEEP_PROPOSALS = 20
 ID_RE = re.compile(r"^[a-z][a-z0-9_-]{0,39}$")
@@ -202,7 +205,8 @@ def build_materials(store: Store, repo: str, kind: str, current_text: str, domai
 
 
 def estimate_usd(model: str, prompt_chars: int, kind: str, turns: int) -> float:
-    """토큰 × 단가(llm/pricing). 첫 대화에 프롬프트를 캐시에 쓰고, 이후 대화는 앞 맥락을 캐시로 읽는다고 본다."""
+    """토큰 × 단가(llm/pricing). 첫 대화에 프롬프트를 캐시에 쓰고, 이후 대화는 앞 맥락을 캐시로 읽고
+    대화마다 TURN_CACHE_WRITE_TOKENS를 새로 쓴다고 본다(실측 보정, docs/cost.md)."""
     p = FIXED_PROMPT_TOKENS + prompt_chars // CHARS_PER_TOKEN
     read = write = 0
     for i in range(turns):
@@ -210,7 +214,7 @@ def estimate_usd(model: str, prompt_chars: int, kind: str, turns: int) -> float:
             write += p
         else:
             read += p + (i - 1) * TURN_GROWTH_TOKENS
-            write += TURN_GROWTH_TOKENS
+            write += TURN_CACHE_WRITE_TOKENS
     out = turns * TURN_OUTPUT_TOKENS + FINAL_OUTPUT_TOKENS[kind]
     return round(estimate_cost(model, 0, out, read, write) or 0.0, 3)
 

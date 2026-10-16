@@ -272,7 +272,7 @@ struct DomainsLearnView: View {
             Button("학습하기 (약 \(money(m.plan?.estimate_usd)))") { Task { await m.run() } }
             Button("취소", role: .cancel) {}
         } message: {
-            Text("Claude API를 호출해요. 예상 약 \(money(m.plan?.estimate_usd)), 많아도 \(money(m.plan?.max_usd))를 넘지 않아요. "
+            Text("Claude API를 호출해요. 예상 약 \(money(m.plan?.estimate_usd)), 대화가 길어지면 약 \(money(m.plan?.max_usd))까지 들 수 있어요(1회 상한 $2). "
                  + "결과는 미리 보기로만 보여 주고, 적용하기 전에는 파일을 바꾸지 않아요.")
         }
     }
