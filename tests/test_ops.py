@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 import time
@@ -6,7 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from askproject.ops import backup, latest_backup, maintenance, offsite, verify_backup
+from askproject.ops import (RestoreRefused, backup, check_backup, latest_backup, list_backups, maintenance, offsite,
+                            restore, verify_backup)
 from askproject.store.db import REDACTED, SCHEMA_VERSION, QueryResult, Store
 
 
@@ -124,3 +126,74 @@ def test_old_database_is_migrated(tmp_path):
     st = Store(path)
     assert st.schema_version == SCHEMA_VERSION
     assert st.execute("SELECT name FROM sqlite_master WHERE name='redactions'").fetchone()
+
+
+def test_list_backups_reports_sha_and_counts(tmp_path):
+    st = Store(tmp_path / "db.sqlite3")
+    _seed(st)
+    dest, sync = tmp_path / "b", tmp_path / "sync"
+    sync.mkdir()
+    r = backup(tmp_path / "db.sqlite3", dest, copy_dir=sync)
+    pre = backup(tmp_path / "db.sqlite3", dest / "pre-migrate", keep_days=365)
+    only_copy = sync / "askproject-20200101-000000.sqlite3"  # 이 맥엔 없고 사본 폴더에만 있는 백업(새 맥)
+    only_copy.write_bytes(r.path.read_bytes())
+    tampered = dest / "askproject-20200102-000000.sqlite3"
+    tampered.write_bytes(r.path.read_bytes())
+    Path(str(tampered) + ".sha256").write_text("0" * 64 + "  x\n")
+    items = list_backups(dest, sync)
+    by = {(b["kind"], b["name"]): b for b in items}
+    assert ("copy", r.path.name) not in by  # 로컬에도 있는 사본은 한 번만
+    assert by[("daily", r.path.name)]["sha256_ok"] is True and by[("daily", r.path.name)]["queries"] == 1
+    assert by[("pre-migrate", pre.path.name)]["sha256_ok"] is True
+    assert by[("copy", only_copy.name)]["sha256_ok"] is None
+    assert by[("daily", tampered.name)]["sha256_ok"] is False
+    assert not check_backup(tampered)["ok"] and check_backup(r.path)["ok"]
+
+
+def _restore_env(tmp_path):
+    data = tmp_path / "data"
+    data.mkdir()
+    st = Store(data / "askproject.sqlite3")
+    _seed(st)
+    old = backup(data / "askproject.sqlite3", tmp_path / "backups")  # 질문 1건 시점
+    _seed(st)  # 백업 뒤 질문 1건 더(복구하면 화면에서 사라지지만 옮겨 둔 파일엔 남는다)
+    return data, st, old
+
+
+def test_restore_moves_current_db_aside_and_puts_backup_in_place(tmp_path):
+    data, st, old = _restore_env(tmp_path)
+    db = data / "askproject.sqlite3"
+    assert Path(str(db) + "-wal").exists()  # WAL 모드에서 쓰는 중
+    r = restore(db, old.path, tmp_path / "backups")
+    assert r["ok"] and r["queries"] == 1
+    aside = [Path(p) for p in r["moved_aside"]]
+    assert aside and aside[0].name.startswith("askproject.sqlite3.before-restore-")
+    conn = sqlite3.connect(f"file:{aside[0]}?mode=ro", uri=True)  # 옮겨 둔 묶음은 그대로 열린다(-wal 포함)
+    assert conn.execute("SELECT COUNT(*) FROM queries").fetchone()[0] == 2
+    conn.close()
+    assert verify_backup(Path(r["pre_restore_backup"]))["queries"] == 2  # 복구 직전 백업
+    assert Path(r["pre_restore_backup"]).parent.name == "pre-restore"
+    assert verify_backup(db)["queries"] == 1
+    assert not list(data.glob(".*restoring"))
+
+
+def test_restore_refuses_while_bot_runs_or_backup_is_bad(tmp_path):
+    from askproject.host import acquire_serve_lock
+
+    data, _, old = _restore_env(tmp_path)
+    db = data / "askproject.sqlite3"
+    before = db.read_bytes()
+    lock = acquire_serve_lock(data)  # 봇이 실행 중
+    with pytest.raises(RestoreRefused, match="봇이 실행 중"):
+        restore(db, old.path, tmp_path / "backups")
+    lock.close()
+    (data / "console.json").write_text(json.dumps({"pid": os.getpid(), "port": 8787, "token": "t"}))
+    with pytest.raises(RestoreRefused, match="웹 콘솔"):
+        restore(db, old.path, tmp_path / "backups")
+    (data / "console.json").unlink()
+    Path(str(old.path) + ".sha256").write_text("0" * 64 + "  x\n")
+    with pytest.raises(RestoreRefused, match="sha256"):
+        restore(db, old.path, tmp_path / "backups")
+    with pytest.raises(RestoreRefused, match="없어요"):
+        restore(db, tmp_path / "nope.sqlite3", tmp_path / "backups")
+    assert db.read_bytes() == before and not list(data.glob("*.before-restore-*"))  # 아무것도 바꾸지 않았다

@@ -11,6 +11,8 @@
   askproject power [default|lid-open|lid-closed]  맥북 절전 모드 확인·전환 (덮개 닫힘은 전원 연결 시만)
   askproject backup [--dest DIR]              감사 로그 백업 (+ 백업 사본 폴더·ASKPROJECT_BACKUP_UPLOAD_CMD로 맥 밖 복사)
   askproject restore-check [백업 파일]         백업 복구 확인 (무결성·질문 수)
+  askproject backups [--json]                 백업 목록 (sha256 일치·질문 수)
+  askproject restore <백업 파일> --yes         백업으로 DB 교체 (봇·콘솔을 끈 뒤, 지금 DB는 옆에 옮겨 둠)
   askproject maintenance [--vacuum]           오래된 커밋 스냅숏·WAL 정리
   askproject redact <query_id> --reason "…"   질문 텍스트 가림 (개인정보 유입 시)
   askproject doctor [--online]                환경 점검 (도구·설정·인덱스, --online이면 연결까지)
@@ -309,13 +311,76 @@ def cmd_diagnostics(out: str | None) -> None:
     print(json.dumps({"path": str(path.resolve())}, ensure_ascii=False))
 
 
-def cmd_restore_check(path: str | None) -> None:
-    from askproject.ops import latest_backup, verify_backup
+def cmd_backups(as_json: bool) -> None:
+    import time
+
+    from askproject.ops import list_backups
+    from askproject.settings import Settings
+
+    s = Settings()
+    items = list_backups(s.backup_dir, s.backup_copy_dir)
+    if as_json:
+        print(json.dumps({"backup_dir": str(s.backup_dir.resolve()),
+                          "copy_dir": str(s.backup_copy_dir) if s.backup_copy_dir else None, "backups": items},
+                         ensure_ascii=False))
+        return
+    for b in items:
+        sha = {True: "sha256 일치", False: "sha256 불일치", None: "sha256 기록 없음"}[b["sha256_ok"]]
+        print(f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(b['mtime']))}  {b['kind']:11} {b['bytes'] / 1e6:6.1f}MB  "
+              f"질문 {b['queries'] if b['queries'] is not None else '?'}건  {sha}  {b['path']}")
+    if not items:
+        print("백업이 없습니다. askproject backup을 먼저 실행하세요.")
+
+
+def cmd_restore(path: str, yes: bool, as_json: bool) -> None:
+    """백업으로 DB 교체. 봇·콘솔이 꺼져 있어야 한다(앱은 먼저 멈추고 부른다)."""
+    from askproject.ops import RestoreRefused, restore
+    from askproject.settings import Settings
+
+    def fail(msg: str, code: int) -> None:
+        print(json.dumps({"ok": False, "error": msg}, ensure_ascii=False) if as_json else f"❌ {msg}")
+        sys.exit(code)
+
+    if not yes:
+        fail("복구는 지금 DB를 백업 시점으로 되돌려요(그 뒤 질문은 화면에서 사라지고, 지금 DB는 옆에 옮겨 둬요). "
+             "확인했으면 --yes를 붙이세요.", 2)
+    s = Settings()
+    try:
+        r = restore(s.db_path, Path(path), s.backup_dir)
+    except RestoreRefused as exc:
+        fail(str(exc), 3)
+    except RuntimeError as exc:
+        fail(str(exc), 1)
+    if as_json:
+        print(json.dumps(r, ensure_ascii=False))
+        return
+    print(f"✅ 복구했어요: {r['restored_from']} → {r['db']} · 질문 {r['queries']}건 · 마지막 질문 {r['latest']}")
+    print(f"   옮겨 둔 이전 DB: {', '.join(r['moved_aside']) or '없음'}"
+          + (f" · 복구 직전 백업 {r['pre_restore_backup']}" if r["pre_restore_backup"] else ""))
+    if r["pre_restore_error"]:
+        print(f"   ⚠️ 복구 직전 백업은 실패했어요({r['pre_restore_error']}). 옮겨 둔 파일이 원본이에요.")
+    print("   봇을 켜고 askproject doctor로 확인하세요.")
+
+
+def cmd_restore_check(path: str | None, as_json: bool = False) -> None:
+    from askproject.ops import check_backup, latest_backup, verify_backup
     from askproject.settings import Settings
 
     target = Path(path) if path else latest_backup(Settings().backup_dir)
     if not target or not target.exists():
+        if as_json:
+            print(json.dumps({"ok": False, "error": "확인할 백업 파일이 없습니다."}, ensure_ascii=False))
+            sys.exit(1)
         sys.exit("확인할 백업 파일이 없습니다. askproject backup을 먼저 실행하세요.")
+    if as_json:
+        try:
+            r = check_backup(target)
+        except Exception as exc:  # 백업이 아닌 파일·망가진 파일
+            print(json.dumps({"ok": False, "path": str(target), "error": f"백업 파일로 열 수 없어요: {exc}"[:300]},
+                             ensure_ascii=False))
+            sys.exit(1)
+        print(json.dumps(r, ensure_ascii=False))
+        sys.exit(0 if r["ok"] else 1)
     r = verify_backup(target)
     ok = r["integrity"] == "ok"
     print(f"{'✅' if ok else '❌'} {target} · 무결성 {r['integrity']} · 스키마 v{r['schema_version']} · "
@@ -537,6 +602,13 @@ def main() -> None:
     bk.add_argument("--keep-days", type=int)
     rc = sub.add_parser("restore-check", help="백업 파일 복구 확인 (기본: 가장 최근 백업)")
     rc.add_argument("path", nargs="?")
+    rc.add_argument("--json", action="store_true", help="앱용 JSON (sha256 일치·문제 목록 포함)")
+    bl = sub.add_parser("backups", help="백업 목록 (매일·마이그레이션 직전·복구 직전·사본 폴더)")
+    bl.add_argument("--json", action="store_true")
+    rs = sub.add_parser("restore", help="백업으로 DB 교체 (봇·콘솔을 끈 뒤, 지금 DB는 옆에 옮겨 둠)")
+    rs.add_argument("path")
+    rs.add_argument("--yes", action="store_true", help="확인했음 (없으면 거부)")
+    rs.add_argument("--json", action="store_true")
     mt = sub.add_parser("maintenance", help="오래된 커밋 스냅숏·WAL 정리 (감사 로그는 건드리지 않음)")
     mt.add_argument("--vacuum", action="store_true")
     rd = sub.add_parser("redact", help="질문 하나의 텍스트를 가림 (개인정보 유입 시, 행은 남김)")
@@ -587,7 +659,11 @@ def main() -> None:
     elif args.cmd == "backup":
         cmd_backup(args.dest, args.keep_days)
     elif args.cmd == "restore-check":
-        cmd_restore_check(args.path)
+        cmd_restore_check(args.path, args.json)
+    elif args.cmd == "backups":
+        cmd_backups(args.json)
+    elif args.cmd == "restore":
+        cmd_restore(args.path, args.yes, args.json)
     elif args.cmd == "maintenance":
         cmd_maintenance(args.vacuum)
     elif args.cmd == "redact":
