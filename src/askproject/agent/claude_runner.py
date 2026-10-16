@@ -83,9 +83,9 @@ class ClaudeAgentRunner:
         if self.config_dir:
             os.makedirs(self.config_dir, mode=0o700, exist_ok=True)
             env["CLAUDE_CONFIG_DIR"] = self.config_dir
-        if self.api_key:
-            env["ANTHROPIC_API_KEY"] = self.api_key
-            env["ANTHROPIC_AUTH_TOKEN"] = ""  # 셸의 Bearer 토큰이 API 키보다 우선하지 않게 비운다
+        # .env 값만 쓴다. 키가 없어도 셸의 키·Bearer 토큰을 물려받지 않게 항상 덮어쓴다
+        env["ANTHROPIC_API_KEY"] = self.api_key or ""
+        env["ANTHROPIC_AUTH_TOKEN"] = ""
         if self.base_url:
             env["ANTHROPIC_BASE_URL"] = self.base_url
         return env
@@ -117,6 +117,7 @@ class ClaudeAgentRunner:
             effort=request.effort,
             permission_mode="dontAsk",
             setting_sources=[],
+            strict_mcp_config=True,  # 사용자 ~/.claude.json의 MCP 서버·claude.ai 커넥터를 띄우지 않는다(도구 정의 노출·env 상속)
             # 구독 모드는 사용자의 claude 로그인을 써야 하므로 SDK 기본 탐색을 그대로 둔다(개발 PoC 전용)
             cli_path=None if self.subscription else paths.claude_cli_path(),
             cwd=self._workdir,
