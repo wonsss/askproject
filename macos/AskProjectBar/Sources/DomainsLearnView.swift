@@ -137,6 +137,8 @@ final class LearnModel: ObservableObject {
     @Published var applying = false
     @Published var note: CheckResult?
     @Published var fileVersion = 0  // 적용 뒤 YAML 보기를 다시 읽게 한다
+    /// 마지막으로 화면을 준비한 종류. 탭을 옮겼다 돌아오면 .task가 다시 돌지만, 종류가 그대로면 학습 결과를 지우지 않는다
+    var preparedKind: String?
 
     var label: String { kind == "domains" ? "도메인 맵" : "용어 사전" }
 
@@ -222,8 +224,14 @@ struct DomainsLearnView: View {
             }
         }
         .task(id: m.kind) {
-            m.proposal = nil
-            m.note = nil
+            // 설정 창의 다른 탭에 갔다 오면 이 작업이 다시 돈다. 그때 방금 받은 제안(1분·약 $0.8)을 버리지 않게,
+            // 도메인 맵 ↔ 용어 사전을 바꿀 때만 비운다
+            if m.preparedKind != m.kind {
+                m.proposal = nil
+                m.selected = []
+                m.note = nil
+                m.preparedKind = m.kind
+            }
             await m.loadPlan()
         }
     }
