@@ -53,7 +53,7 @@ def check_slack(s: Settings) -> dict:
         return {"ok": False, "step": "slack", "detail": hint}
     try:
         # 앱 토큰(xapp-, connections:write)으로 Socket Mode 연결 URL을 받아 본다(실제 연결은 하지 않는다)
-        WebClient(token=s.slack_app_token.get_secret_value()).apps_connections_open()
+        WebClient().apps_connections_open(app_token=s.slack_app_token.get_secret_value())
     except SlackApiError as exc:
         err = exc.response.get("error", "")
         return {"ok": False, "step": "slack",
