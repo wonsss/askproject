@@ -3,6 +3,8 @@ name = "askproject"
 version = "0.1.2"
 description = "기획자가 슬랙에서 코드베이스와 기획 문서에 질문하는 봇"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     "aiohttp>=3.14.5",
