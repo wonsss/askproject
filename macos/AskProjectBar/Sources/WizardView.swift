@@ -1,4 +1,4 @@
-// 첫 실행 마법사: 슬랙 앱 → GitHub 토큰·레포 → Claude API 키 → 답할 채널 → 점검 → 켜기.
+// 첫 실행 마법사: 슬랙 앱 → GitHub 토큰·레포 → Claude API 키 → 답할 채널 → 점검 → 켜기 → 팀 공유(선택).
 // 진행 단계는 저장해 두고 이어서 한다(슬랙 앱 승인이 며칠 걸릴 수 있다). 값 저장·검증은 모두 백엔드가 한다.
 
 import AppKit
@@ -7,10 +7,10 @@ import SwiftUI
 @MainActor
 final class WizardModel: ObservableObject {
     enum Step: Int, CaseIterable {
-        case welcome, slack, github, claude, channels, verify, start
+        case welcome, slack, github, claude, channels, verify, start, share  // 저장된 단계 번호가 바뀌지 않게 끝에만 붙인다
 
         var title: String {
-            ["시작", "슬랙 앱", "GitHub", "Claude", "답할 채널", "점검", "켜기"][rawValue]
+            ["시작", "슬랙 앱", "GitHub", "Claude", "답할 채널", "점검", "켜기", "팀 공유 (선택)"][rawValue]
         }
     }
 
@@ -234,6 +234,7 @@ final class WizardModel: ObservableObject {
 
 struct WizardView: View {
     @StateObject private var m = WizardModel()
+    @StateObject private var share = SettingsModel()
     @AppStorage(Privacy.ackKey) private var privacyAck = false
 
     var body: some View {
@@ -285,6 +286,7 @@ struct WizardView: View {
         case .channels: channelsStep
         case .verify: verify
         case .start: startStep
+        case .share: shareStep
         }
     }
 
@@ -444,12 +446,29 @@ struct WizardView: View {
                 Button("켜기") { Task { await m.start() } }.buttonStyle(.borderedProminent).disabled(m.working != nil)
             } else {
                 Text("허용한 채널에서 이렇게 물어보세요: @AskProject 로그인 화면은 어떤 조건에서 보여?").font(.callout)
+                Text("팀원도 브라우저로 웹 콘솔(질문·답 기록)을 보게 하려면 다음 단계에서 팀 공유를 설정하세요. 나중에 설정 → 팀 공유에서 해도 돼요.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Button("맥 운영 설정 열기") { WindowManager.shared.showSettings(tab: .host) }
-                    Button("닫기") { WindowManager.shared.closeWizard() }.buttonStyle(.borderedProminent)
+                    Button("닫기") { WindowManager.shared.closeWizard() }
+                    Button("팀 공유 설정하기") { m.go(.share) }.buttonStyle(.borderedProminent)
                 }
             }
         }
+    }
+
+    private var shareStep: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("팀 공유 (선택)").font(.title3.weight(.semibold))
+            Text("웹 콘솔을 Cloudflare로 공개 주소에 이어, 허용한 팀원 이메일로만 들어오게 해요. 도메인이 없거나 지금 필요 없으면 건너뛰어도 돼요.")
+                .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            ScrollView {
+                TeamShareForm(m: share).padding(.trailing, 12)
+            }
+            if let n = share.note { NoteView(note: n) }
+            TeamShareControls(m: share, isApp: AppModel.shared.isApp)
+        }
+        .task { await share.load() }
     }
 
     private func fixStep(_ step: String?) -> WizardModel.Step? {
@@ -472,7 +491,9 @@ struct WizardView: View {
             if m.step != .welcome {
                 Button("이전") { m.go(WizardModel.Step(rawValue: m.step.rawValue - 1)!) }.disabled(m.working != nil)
             }
-            if m.step != .start {
+            if m.step == .share {
+                Button(share.shareOn ? "완료" : "건너뛰고 닫기") { WindowManager.shared.closeWizard() }
+            } else if m.step != .start {
                 Button(nextLabel) { Task { await next() } }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)

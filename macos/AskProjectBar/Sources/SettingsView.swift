@@ -27,6 +27,8 @@ final class SettingsModel: ObservableObject {
     @Published var shareOn = false
     @Published var shareCheck: CheckResult?
     @Published var checkingShare = false
+    @Published var detectingTeam = false
+    @Published var teamDetect: CheckResult?
     @Published var notionRoot = ""
     @Published var checks: [String: CheckResult] = [:]
     @Published var checking: String?
@@ -53,11 +55,67 @@ final class SettingsModel: ObservableObject {
         return words.last(where: { $0.hasPrefix("eyJ") }) ?? pasted.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// 이 터널의 대시보드 Routes 화면. 방금 붙여넣은(저장 전) 토큰이 있으면 그걸, 없으면 저장된 토큰(config get)을 쓴다.
+    var routesURL: URL? {
+        currentTunnelIDs.map { CloudflareDash.url(CloudflareDash.routes(tunnel: $0.tunnel), account: $0.account) }
+    }
+
+    /// Access 앱 목록. 계정 ID를 알면 그 계정 주소로 바로 연다.
+    var accessAppsURL: URL { CloudflareDash.url(CloudflareDash.accessApps, account: currentTunnelIDs?.account) }
+
+    private var currentTunnelIDs: (account: String, tunnel: String)? {
+        if let ids = Self.tunnelIDs(Self.tunnelToken(shareToken)) { return ids }
+        return config?.tunnel.map { ($0.account_id, $0.tunnel_id) }
+    }
+
+    /// 토큰(base64 JSON {a, t, s})의 계정·터널 ID. 주소에 넣으므로 형식이 맞을 때만 돌려준다(백엔드 tunnel.dashboard_info와 같은 규칙).
+    static func tunnelIDs(_ token: String) -> (account: String, tunnel: String)? {
+        guard token.hasPrefix("eyJ") else { return nil }
+        var b64 = token
+        while b64.count % 4 != 0 { b64 += "=" }
+        guard let data = Data(base64Encoded: b64),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let a = obj["a"] as? String, let t = obj["t"] as? String,
+              a.count == 32, a.allSatisfy(\.isHexDigit), UUID(uuidString: t) != nil else { return nil }
+        return (a.lowercased(), t.lowercased())
+    }
+
     var shareTokenSaved: Bool { config?.secrets["ASKPROJECT_CLOUDFLARE_TUNNEL_TOKEN"] ?? false }
 
     var shareComplete: Bool {
         !shareHost.isEmpty && !shareTeam.isEmpty && !shareAud.isEmpty && (shareTokenSaved || !shareToken.isEmpty)
     }
+
+    /// 'https://askproject.example.com/'처럼 붙여넣어도 호스트 이름만 쓴다.
+    static func host(_ s: String) -> String {
+        var v = s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        for p in ["https://", "http://"] where v.hasPrefix(p) { v.removeFirst(p.count) }
+        return v.split(separator: "/").first.map(String.init) ?? v
+    }
+
+    /// 팀 이름만 넣으면 .cloudflareaccess.com을 붙인다.
+    static func teamDomain(_ s: String) -> String {
+        let v = host(s)
+        return v.isEmpty || v.contains(".") ? v : v + ".cloudflareaccess.com"
+    }
+
+    var shareHostProblem: String? {
+        let v = Self.host(shareHost)
+        return v.isEmpty || v.contains(".") ? nil : "askproject.example.com처럼 도메인까지 넣어 주세요"
+    }
+
+    var shareTeamProblem: String? {
+        let v = Self.teamDomain(shareTeam)
+        return v.isEmpty || v.hasSuffix(".cloudflareaccess.com") ? nil : "팀 도메인은 <팀 이름>.cloudflareaccess.com 형식이에요"
+    }
+
+    var shareAudProblem: String? {
+        let v = shareAud.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hex = v.count == 64 && v.allSatisfy(\.isHexDigit)
+        return v.isEmpty || hex ? nil : "AUD 태그는 64자리 16진수예요 (지금 \(v.count)자리)"
+    }
+
+    var shareHasProblem: Bool { shareHostProblem != nil || shareTeamProblem != nil || shareAudProblem != nil }
 
     /// 저장 → 콘솔 다시 시작(공개 호스트·Access 값은 시작할 때 읽는다) → 켜져 있으면 터널도 새 토큰으로.
     func saveShare() async {
@@ -65,19 +123,26 @@ final class SettingsModel: ObservableObject {
         let token = Self.tunnelToken(shareToken)
         if !token.isEmpty { secrets["ASKPROJECT_CLOUDFLARE_TUNNEL_TOKEN"] = token }
         working = true
-        let r = await Backend.setConfig(settings: ["console_public_host": shareHost.trimmingCharacters(in: .whitespaces),
-                                                   "cf_access_team_domain": shareTeam.trimmingCharacters(in: .whitespaces),
-                                                   "cf_access_aud": shareAud.trimmingCharacters(in: .whitespaces)],
+        let r = await Backend.setConfig(settings: ["console_public_host": Self.host(shareHost),
+                                                   "cf_access_team_domain": Self.teamDomain(shareTeam),
+                                                   "cf_access_aud": shareAud.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()],
                                         secrets: secrets)
         working = false
         note = CheckResult(ok: r.ok, detail: r.ok ? "저장했어요. 웹 콘솔을 다시 시작해요." : (r.error ?? "저장 실패"), step: nil)
         guard r.ok else { return }
         shareToken = ""
-        if Backend.isBundled {
-            Agents.restart("console")
-            if Agents.tunnelEnabled { Agents.restart(Agents.tunnel) }
-        }
+        // 콘솔은 공개 호스트·Access 값을 시작할 때 읽는다. 배포 앱(SMAppService)과 개발 호스트 모드(host on)의
+        // launchd 레이블이 같아서 kickstart는 두 모드 모두에서 동작한다(등록돼 있지 않으면 아무 일도 없다)
+        Agents.restart("console")
+        if Backend.isBundled && Agents.tunnelEnabled { Agents.restart(Agents.tunnel) }
         await load()
+    }
+
+    /// 2번 단계: 토큰을 저장하고 바로 터널을 켠다(대시보드의 Continue가 연결을 기다리므로).
+    func saveTokenAndStart() async {
+        await saveShare()
+        guard note?.ok == true, shareTokenSaved, Backend.isBundled else { return }
+        setShare(true)
     }
 
     func setShare(_ on: Bool) {
@@ -104,6 +169,15 @@ final class SettingsModel: ObservableObject {
 
     var notionRootChanged: Bool {
         notionRoot.trimmingCharacters(in: .whitespaces) != (config?.settings.notion_root_page_id ?? "")
+    }
+
+    /// 공개 주소의 Access 로그인 리다이렉트에서 팀 도메인을 읽어 칸을 채운다(`setup team-domain`).
+    func detectTeam() async {
+        detectingTeam = true
+        let (r, out) = await Backend.json(TeamDomainResult.self, ["setup", "team-domain", "--host", Self.host(shareHost)])
+        detectingTeam = false
+        if let team = r?.team_domain { shareTeam = team }
+        teamDetect = CheckResult(ok: r?.ok ?? false, detail: r?.detail ?? out.errorLine, step: "tunnel")
     }
 
     func checkShare() async {
@@ -373,40 +447,14 @@ struct SettingsView: View {
     private var share: some View {
         SettingsPage {
             SectionHeader("웹 콘솔을 팀원과 함께 보기",
-                          "팀원은 브라우저에서 https://<내 주소>로 들어오고, 허용 목록에 있는 이메일로 받은 코드로 로그인해요. 콘솔은 계속 이 맥(127.0.0.1)에만 열려 있고, Cloudflare Tunnel이 바깥과 이어 줘요.")
-            Text("콘솔에는 슬랙 질문 원문과 답이 그대로 남아 있어요. 허용 목록은 운영을 맡은 몇 명으로 좁게 두세요.")
-                .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
-            GroupBox {
-                VStack(alignment: .leading, spacing: 6) {
-                    shareStep(1, "Cloudflare에 도메인을 연결해 두세요(없으면 Cloudflare에서 살 수 있어요). Zero Trust는 50명까지 무료예요.")
-                    shareStep(2, "Zero Trust → Networks → Tunnels → Create a tunnel(Cloudflared). 설치 명령의 'eyJ…' 토큰(또는 명령 전체)을 아래에 붙여넣으세요. 명령은 실행하지 않아요.")
-                    shareStep(3, "같은 터널의 Public hostname: 서브도메인(예: askproject) + 내 도메인, 서비스는 HTTP · 127.0.0.1:8787.")
-                    shareStep(4, "Access → Applications → Add → Self-hosted, 같은 주소로 만들고 Allow 정책에 팀원 이메일을 넣으세요. 앱 Overview의 AUD 태그를 복사해요.")
-                    shareStep(5, "팀 도메인은 Zero Trust → Settings의 팀 이름 + .cloudflareaccess.com 이에요.")
-                    Button("Cloudflare Zero Trust 열기") { NSWorkspace.shared.open(URL(string: "https://one.dash.cloudflare.com/")!) }
-                        .buttonStyle(.link).padding(.top, 2)
-                }
-                .padding(6)
-            }
-            LabeledField("공개 주소", placeholder: "askproject.example.com", text: $m.shareHost)
-            LabeledField("Access 팀 도메인", placeholder: "myteam.cloudflareaccess.com", text: $m.shareTeam)
-            LabeledField("Access AUD 태그", placeholder: "64자리 16진수", text: $m.shareAud)
-            TokenField(title: "터널 토큰", placeholder: "eyJ…", text: $m.shareToken,
-                       problem: WizardModel.prefixProblem(SettingsModel.tunnelToken(m.shareToken), "eyJ", "터널 토큰"), saved: m.shareTokenSaved)
+                          "팀원은 브라우저에서 https://<공개 주소>로 들어오고, 허용 목록에 있는 이메일로 받은 코드로 로그인해요. 콘솔은 계속 이 맥(127.0.0.1)에만 열려 있고, Cloudflare Tunnel이 바깥과 이어 줘요. 아래 순서대로 하면 10분쯤 걸려요.")
             if !app.isApp {
                 Text("개발 앱에서는 켜고 끌 수 없어요. docs/operations.md의 CLI 방식(cloudflared + launchd)을 쓰세요.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
-            if let c = m.shareCheck { NoteView(note: c) }
+            TeamShareForm(m: m)
         } footer: {
-            Toggle("팀 공유 켜기", isOn: Binding(get: { m.shareOn }, set: { m.setShare($0) }))
-                .toggleStyle(.switch)
-                .disabled(!app.isApp || m.working || (!m.shareOn && !m.shareComplete))
-            Button(m.checkingShare ? "확인 중…" : "연결 확인") { Task { await m.checkShare() } }
-                .disabled(m.checkingShare || !m.shareComplete)
-            Spacer()
-            Button("저장") { Task { await m.saveShare() } }
-                .buttonStyle(.borderedProminent).disabled(m.working)
+            TeamShareControls(m: m, isApp: app.isApp)
         }
     }
 

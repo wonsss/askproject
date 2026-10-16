@@ -119,6 +119,13 @@ struct ConfigState: Decodable {
     let settings: ConfigSettings
     let secrets: [String: Bool]
     let repos: [RepoEntry]
+    let tunnel: TunnelInfo?  // 저장된 터널 토큰의 계정·터널 ID(비밀 아님). 없으면 null
+}
+
+struct TunnelInfo: Decodable {
+    let account_id: String
+    let tunnel_id: String
+    let routes_url: String
 }
 
 struct ConfigSetResult: Decodable {
@@ -134,6 +141,12 @@ struct CheckResult: Decodable {
 
 struct URLResult: Decodable {
     let url: String
+}
+
+struct TeamDomainResult: Decodable {
+    let ok: Bool
+    let detail: String
+    let team_domain: String?
 }
 
 struct GitRepo: Decodable, Identifiable, Hashable {
