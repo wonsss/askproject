@@ -11,6 +11,7 @@ AskProject: 기획자가 슬랙에서 질문하면 대상 코드베이스와 기
 - `docs/wireframe.md` — 와이어프레임 생성 동작·보안·비용
 - `docs/operations.md` — DB 운영: 보존 정책(영구), 백업·복구, 가리기, 스키마 변경, 외부 공개, 맥 간 이전
 - `docs/flowchart.md` — 정책·흐름 답변의 로직 흐름도(명세 JSON + SVG 렌더러)
+- `docs/learn.md` — 도메인 맵·용어 사전 학습(초안·검증·잠금·적용, 학습 전후 eval 비교)
 - `docs/packaging.md` — 데스크톱 제품화: 번들(PBS+uv)·서명·공증·SMAppService·마법사·업데이트·migrate
 
 ## 명령
@@ -33,6 +34,8 @@ uv run askproject status [--json]      # 메뉴 막대 앱용 상태 (Claude 호
 uv run askproject provider [api|subscription]  # LLM 인증 경로 확인·전환
 bash scripts/build-macos-app.sh     # 메뉴 막대 앱 macos/AskProjectBar → ~/Applications/AskProject.app
 uv run askproject redact <query_id> --reason "…"        # 개인정보 유입 시 텍스트 가림
+uv run askproject learn domains|glossary [--dry-run] [--json]   # AI 초안 + 검증 (비용 듦, --dry-run은 예상 금액만)
+uv run askproject learn domains|glossary --apply <id|-> [--accept a,b]   # 승인 항목만 적용(백업·잠금 보존)
 uv run askproject migrate | diagnostics | nightly     # 스키마·설정 올리기(백업 후) · 진단 zip · 매일 작업
 uv run askproject paths|config get|status --json      # 앱↔백엔드 계약(JSON). config set은 표준 입력 JSON
 uv run askproject setup manifest-url|pat-url|check <slack|github|claude>|repos|channels   # 마법사용
@@ -46,6 +49,7 @@ uv run pytest
 ## 구조 요약
 
 `src/askproject/`
+- `learn.py` 도메인·용어 학습(재료·에이전트 초안·결정적 검증·적용·잠금 지문 `data/learn/learned.json`)
 - `app.py` 조립 지점 · `cli.py` · `doctor.py` · `evaluation.py`
 - `paths.py` 실행 모드별 경로(개발: 레포 상대, 앱 `ASKPROJECT_APP=1`: ~/Library) · `keychain.py` 앱 모드 비밀값 · `config_store.py` 앱용 설정 계약(검증·원자적 쓰기) · `setup.py` 마법사 점검 · `migrate.py` · `diagnostics.py` · `logs.py`
 - `pipeline/` 스코핑(`scoping.py`) → 라우팅(거절·되묻기·단순·에이전트·와이어프레임) → `answer.py`(인용 검증·확신도) · `prompts.py` · `screenshot.py` · `wireframe.py`(화면 명세 스키마·결정적 렌더러, 자유 HTML 허용 목록 정제·CSP)
@@ -69,9 +73,10 @@ uv run pytest
 ## 현재 상태
 
 - 비용은 SDK 보고값이 아니라 토큰 × 단가로 계산한다(`llm/pricing.py`). 경로별 실측과 월 비용 추정은 `docs/cost.md`.
-- **API 비용이 드는 작업(eval·ask)은 예상 금액을 먼저 사용자에게 말한다.** (api 모드 기준 전체 평가 1회 약 $0.85 — 문항 수에 비례)
+- **API 비용이 드는 작업(eval·ask·learn 실제 실행)은 예상 금액을 먼저 사용자에게 말한다.** (api 모드 기준 전체 평가 1회 약 $0.85 — 문항 수에 비례)
 - 모델: `claude-sonnet-5-5`(심층 탐색·판정), `claude-haiku-5-5`(스코핑·빠른 답). 소형 모델 호출은 thinking을 끈다(켜면 스코핑 JSON이 잘림). effort는 `ASKPROJECT_AGENT_EFFORT_LARGE/SMALL`로 바꿀 수 있고 비우면 모델 기본값.
 - 와이어프레임 생성(화면 명세 JSON → 렌더러가 저충실도 HTML, 슬랙 파일 업로드). 상세는 `docs/wireframe.md`. 정책·흐름 질문에는 로직 흐름도(SVG HTML). 상세는 `docs/flowchart.md`.
+- 도메인·용어 학습(`learn.py`, `docs/learn.md`): 덮어쓰지 않는다 — 초안 → 결정적 검증 → 항목별 승인 → 적용. 사람이 쓰거나 고친 항목(지문 불일치·`locked: true`)은 잠금, 제안 뒤 파일이 바뀌면 적용 거부. 앱 화면은 `DomainsLearnView.swift`. 자동 재학습 없음.
 - 답변 끝에 '💬 이어서 물어보기' 후속 질문 버튼 2~3개.
 - 웹 콘솔(`askproject console`): 동기화 때 커밋별 파일 해시(`commit_files`)를 기록해 답의 최신성을 판단한다. 외부 공개는 Cloudflare Tunnel + Access(`docs/operations.md`). 배포 앱은 설정 → 팀 공유(대시보드 터널 토큰, 내장 cloudflared, 에이전트 `com.askproject.tunnel`, `tunnel.py`, `setup check tunnel`).
 - DB: 감사 로그 **영구 보존**. 스키마는 `PRAGMA user_version` + `store/db.py`의 `MIGRATIONS`(추가만, 현재 v3). 백업·복구 확인·정리·가리기·복구(`restore`) 명령 있음. 맥 밖 사본은 백업 사본 폴더(`ASKPROJECT_BACKUP_COPY_DIR`, 동기화 폴더에 원자적 복사) 또는 `ASKPROJECT_BACKUP_UPLOAD_CMD`. 앱은 패널 백업 폴더 열기, 설정 → 맥 운영에서 사본 폴더 고르기·'백업에서 복구'(`RestoreView.swift`).

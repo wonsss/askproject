@@ -118,12 +118,14 @@ uv run askproject host on|off|status    # 맥북 호스트 모드: 봇·콘솔 �
 uv run askproject backup | restore-check | maintenance | nightly   # 감사 로그 백업·복구 확인·정리
 uv run askproject backups [--json] · restore <백업 파일> --yes      # 백업 목록 · 백업으로 DB 교체(docs/operations.md)
 uv run askproject redact <query_id> --reason "…"   # 개인정보 유입 시 텍스트 가림
+uv run askproject learn domains|glossary [--dry-run]   # AI 초안 → 검증 → 미리 보기 (docs/learn.md)
+uv run askproject learn domains --apply <제안 id> [--accept a,b]   # 승인한 항목만 적용 (백업, 사람이 고친 항목은 잠금)
 uv run askproject migrate               # DB 스키마·설정 형식 올리기 (백업 후, 다운그레이드 거부)
 uv run askproject diagnostics           # 비밀값을 가린 진단 묶음 zip (이 맥에만 저장)
 uv run pytest
 ```
 
-`ask`·`eval`·`serve`만 Claude 비용이 듭니다. 경로별 비용은 [docs/cost.md](docs/cost.md)에 있습니다.
+`ask`·`eval`·`serve`·`learn`(--dry-run·--apply 제외)만 Claude 비용이 듭니다. 경로별 비용은 [docs/cost.md](docs/cost.md)에 있습니다.
 
 ## 설정
 
@@ -159,8 +161,8 @@ uv run pytest
 | 파일 / 환경변수 | 내용 |
 | --- | --- |
 | `config/repos.yaml` | 대상 레포, 기준 ref, 제외 규칙, 레포별 `structure:` 구조 맵 규칙 |
-| `config/domains.yaml` | 기획자 관점 도메인 목록과 도메인별 허용 경로(서비스마다 작성) |
-| `config/glossary.yaml` | 기획 용어 → 코드 식별자 힌트(서비스마다 작성) |
+| `config/domains.yaml` | 기획자 관점 도메인 목록과 도메인별 허용 경로. 직접 쓰거나 `askproject learn domains`(앱: 설정 → 도메인·용어 → 학습하기)로 초안을 받아 항목별로 적용 |
+| `config/glossary.yaml` | 기획 용어 → 코드 식별자 힌트. `askproject learn glossary`로도 채운다 |
 | `eval/golden.yaml` | 골든 세트 (정답·근거·기대 행동. 형식은 `eval/golden.example.yaml`, git 제외) |
 | `ASKPROJECT_MODEL_LARGE` / `_SMALL` | 기본 `claude-sonnet-5-5` / `claude-haiku-5-5` |
 | `ASKPROJECT_AGENT_EFFORT_LARGE` / `_SMALL` | 비우면 모델 기본값 |
@@ -240,6 +242,7 @@ bash scripts/build-app.sh           # 배포 앱: 백엔드 내장 + Developer I
 | [cost.md](docs/cost.md) | 비용 계산 방법, 경로별 실측, 월 비용 추정 |
 | [implementation-plan.md](docs/implementation-plan.md) | 설계 결정과 구현 현황 |
 | [web-console.md](docs/web-console.md) | 웹 콘솔 기획과 범위 |
+| [learn.md](docs/learn.md) | 도메인 맵·용어 사전 학습: 초안·검증·잠금·적용, 학습 전후 eval 비교 |
 | [wireframe.md](docs/wireframe.md) · [flowchart.md](docs/flowchart.md) | 와이어프레임·변경안 목업, 로직 흐름도 |
 
 ## 기여
