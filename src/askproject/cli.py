@@ -543,9 +543,10 @@ def main() -> None:
     dr.add_argument("--online", action="store_true", help="슬랙·Claude·GitHub·노션 연결까지 확인")
     dr.add_argument("--json", action="store_true", help="앱용 JSON (실패 항목에 고칠 마법사 단계 포함)")
     su = sub.add_parser("setup", help="첫 실행 마법사용 점검·조회 (JSON)")
-    su.add_argument("action", choices=["manifest-url", "pat-url", "check", "repos", "channels"])
+    su.add_argument("action", choices=["manifest-url", "pat-url", "check", "repos", "channels", "team-domain"])
     su.add_argument("target", nargs="?", choices=["slack", "github", "claude", "tunnel"])
     su.add_argument("--owner", help="pat-url: 레포 소유 조직(target_name)")
+    su.add_argument("--host", help="team-domain: 팀 공유 공개 주소")
     args = parser.parse_args()
     _prepare(args.cmd)
     if args.cmd == "doctor":
@@ -555,7 +556,7 @@ def main() -> None:
     if args.cmd == "setup":
         from askproject.setup import run as setup_run
 
-        print(json.dumps(setup_run(args.action, args.target, args.owner), ensure_ascii=False))
+        print(json.dumps(setup_run(args.action, args.target, args.owner, args.host), ensure_ascii=False))
         return
     if args.cmd == "sync":
         cmd_sync(args.force, not args.no_external)

@@ -79,7 +79,7 @@ class SettingsPatch(BaseModel):
         v = v.strip().lower().removeprefix("https://").rstrip("/")
         rule, hint = {"console_public_host": (tunnel.HOSTNAME, "주소는 askproject.example.com처럼 호스트 이름만 넣어요"),
                       "cf_access_team_domain": (tunnel.TEAM_DOMAIN, "팀 도메인은 <팀 이름>.cloudflareaccess.com 형식이에요"),
-                      "cf_access_aud": (tunnel.AUD, "AUD 태그는 64자리 16진수예요 (Access 앱 → Overview)")}[info.field_name]
+                      "cf_access_aud": (tunnel.AUD, "AUD 태그는 64자리 16진수예요 (Access 앱 → Additional settings → AUD tag)")}[info.field_name]
         if not rule.match(v):
             raise ValueError(hint)
         return v
@@ -148,12 +148,17 @@ def get(settings: Settings) -> dict:
     secrets = {}
     for field, account in keychain.FIELDS.items():
         secrets[account] = bool(getattr(settings, field))
+    from askproject import tunnel
+
+    token = settings.cloudflare_tunnel_token
     return {
         "config_version": CONFIG_VERSION,
         "mode": "app" if paths.app_mode() else "dev",
         "settings": {f: getattr(settings, f) for f in SettingsPatch.model_fields},
         "secrets": secrets,
         "repos": [{k: r.get(k, "") for k in ("name", "url", "ref", "description")} for r in (raw or {}).get("repos") or []],
+        # 팀 공유: 저장된 터널 토큰에서 읽은 계정·터널 ID와 Routes 주소(토큰 값 자체는 돌려주지 않는다)
+        "tunnel": tunnel.dashboard_info(token.get_secret_value() if token else None),
     }
 
 

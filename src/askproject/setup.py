@@ -5,6 +5,7 @@
 - check slack|github|claude|tunnel   저장된 값으로 연결 확인(tunnel: 웹 콘솔 팀 공유, askproject.tunnel) → {"ok", "detail", "step"}
 - repos          PAT로 읽을 수 있는 레포 목록(선택용)
 - channels       봇이 들어가 있는 공개 채널 목록(허용 목록 선택용)
+- team-domain --host H   공개 주소의 Access 로그인 리다이렉트에서 팀 도메인 찾기(팀 공유)
 """
 
 from __future__ import annotations
@@ -134,7 +135,11 @@ def list_channels(s: Settings) -> dict:
     return {"ok": bool(chans), "detail": detail, "channels": sorted(chans, key=lambda c: c["name"])}
 
 
-def run(action: str, target: str | None = None, owner: str | None = None) -> dict:
+def run(action: str, target: str | None = None, owner: str | None = None, host: str | None = None) -> dict:
+    if action == "team-domain":
+        from askproject.tunnel import detect_team
+
+        return detect_team(host or "")
     if action == "manifest-url":
         return {"url": manifest_url()}
     if action == "pat-url":
