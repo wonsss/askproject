@@ -98,21 +98,21 @@ def test_maintenance_drops_only_unreferenced_snapshots(tmp_path):
 def test_redact_hides_text_keeps_rows_and_trigger(tmp_path):
     st = Store(tmp_path / "db.sqlite3")
     qid = _seed(st)
-    assert st.redact(qid, "marco", "개인정보 유입")
+    assert st.redact(qid, "admin", "개인정보 유입")
     q = st.execute("SELECT question FROM queries WHERE id=?", (qid,)).fetchone()[0]
     a = st.execute("SELECT answer, scope FROM query_results WHERE query_id=?", (qid,)).fetchone()
     t = st.execute("SELECT input_json FROM tool_calls WHERE query_id=?", (qid,)).fetchone()[0]
     assert q == REDACTED and a[0] == REDACTED and a[1] is None and t == "{}"
     assert st.execute("SELECT COUNT(*) FROM citations WHERE query_id=?", (qid,)).fetchone()[0] == 1  # 행은 남김
     rec = st.execute("SELECT operator, reason FROM redactions WHERE query_id=?", (qid,)).fetchone()
-    assert tuple(rec) == ("marco", "개인정보 유입")
+    assert tuple(rec) == ("admin", "개인정보 유입")
     with pytest.raises(sqlite3.IntegrityError):  # 트리거가 다시 걸려 있다
         st.execute("UPDATE queries SET question='x' WHERE id=?", (qid,))
     with pytest.raises(sqlite3.IntegrityError):  # 가림 기록도 지울 수 없다
         st.execute("DELETE FROM redactions")
-    assert not st.redact("nope", "marco", "x")
+    assert not st.redact("nope", "admin", "x")
     with pytest.raises(ValueError):
-        st.redact(qid, "marco", " ")
+        st.redact(qid, "admin", " ")
 
 
 def test_old_database_is_migrated(tmp_path):
