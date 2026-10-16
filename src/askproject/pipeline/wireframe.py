@@ -36,7 +36,10 @@ ALLOWED_ATTRS = {
 }
 CSP = ("default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src 'none'; "
        "form-action 'none'; base-uri 'none'")
-CSS_BLOCKED_RE = re.compile(r"@import[^;]*;?|url\s*\([^)]*\)|expression\s*\(|behavior\s*:|-moz-binding", re.I)
+CSS_BLOCKED_RE = re.compile(r"@import[^;]*;?|url\s*\([^)]*\)|(?:-webkit-)?image-set\s*\([^)]*\)|expression\s*\(|behavior\s*:"
+                            r"|-moz-binding", re.I)
+# 정제가 문서 뼈대를 다시 짠다: 원본의 html·head·meta는 버리고 CSP가 든 head를 항상 맨 앞에 둔다
+SKELETON_TAGS = {"html", "head", "meta"}
 
 
 def extract_html(text: str) -> tuple[str | None, str]:
@@ -49,7 +52,8 @@ def extract_html(text: str) -> tuple[str | None, str]:
 
 
 def _clean_css(css: str) -> str:
-    return CSS_BLOCKED_RE.sub("", css)
+    # CSS 이스케이프(u\\72l( · @\\69mport)로 차단 목록을 피하지 못하게 역슬래시를 먼저 없앤다
+    return CSS_BLOCKED_RE.sub("", css.replace("\\", ""))
 
 
 class _Sanitizer(HTMLParser):
@@ -65,8 +69,8 @@ class _Sanitizer(HTMLParser):
             return
         if self.drop_depth or tag not in ALLOWED_TAGS:
             return
-        if tag == "meta" and not any(k == "charset" for k, _ in attrs):
-            return  # http-equiv(refresh 등)·기타 meta는 버린다. CSP는 따로 넣는다
+        if tag in SKELETON_TAGS:
+            return  # http-equiv(refresh 등)를 포함한 meta·html·head는 버린다. sanitize_html이 다시 짠다
         kept = []
         for k, v in attrs:
             k = k.lower()
@@ -94,7 +98,7 @@ class _Sanitizer(HTMLParser):
         if tag in DROP_WITH_CONTENT:
             self.drop_depth = max(0, self.drop_depth - 1)
             return
-        if self.drop_depth or tag not in ALLOWED_TAGS or tag in VOID_TAGS:
+        if self.drop_depth or tag not in ALLOWED_TAGS or tag in VOID_TAGS or tag in SKELETON_TAGS:
             return
         if tag == "style":
             self.in_style = False
@@ -129,15 +133,11 @@ def sanitize_html(raw: str) -> str:
     p.feed(raw)
     p.close()
     body = "".join(p.out)
-    head_inject = (f'<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="{CSP}">'
-                   '<meta name="viewport" content="width=device-width, initial-scale=1">')
-    if re.search(r"<head[^>]*>", body):
-        body = re.sub(r"<head[^>]*>", lambda m: m.group(0) + head_inject, body, count=1)
-    else:
-        body = f"<head>{head_inject}</head>" + body
-    if not body.lstrip().startswith("<html"):
-        body = f"<html lang=\"ko\">{body}</html>"
-    return "<!DOCTYPE html>\n" + body
+    # CSP meta는 head 안, 다른 어떤 내용보다 앞에 있어야 브라우저가 지킨다. 원본 head 내용(style·title)은 뒤에 남는다
+    head = (f'<head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="{CSP}">'
+            '<meta name="viewport" content="width=device-width, initial-scale=1"></head>')
+    return f'<!DOCTYPE html>\n<html lang="ko">{head}{body}</html>'
+
 
 
 # ── 화면 명세 → HTML ─────────────────────────────────────────────
