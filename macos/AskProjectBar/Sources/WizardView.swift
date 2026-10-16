@@ -350,9 +350,11 @@ struct WizardView: View {
                         Text("고르세요").tag(GitRepo?.none)
                         ForEach(m.repos) { r in Text(r.full_name + (r.private ? " 🔒" : "")).tag(GitRepo?.some(r)) }
                     }
-                    .frame(width: 330)
+                    .frame(minWidth: 200, maxWidth: .infinity)
                     TextField(m.selectedRepo?.default_branch ?? "브랜치", text: $m.ref).frame(width: 110)
-                    Button("이 레포로") { Task { await m.saveRepo() } }.disabled(m.selectedRepo == nil || m.working != nil)
+                        .help("읽을 브랜치. 비우면 기본 브랜치")
+                    Button("이 레포로 저장") { Task { await m.saveRepo() } }
+                        .fixedSize().disabled(m.selectedRepo == nil || m.working != nil)
                 }
             } else if let r = m.config?.repos.first {
                 Label("등록된 레포: \(r.url) @ \(r.ref)", systemImage: "checkmark.circle").font(.callout)
