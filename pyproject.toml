@@ -1,6 +1,6 @@
 [project]
 name = "askproject"
-version = "0.1.0"
+version = "0.1.1"
 description = "기획자가 슬랙에서 코드베이스와 기획 문서에 질문하는 봇"
 readme = "README.md"
 requires-python = ">=3.12"
