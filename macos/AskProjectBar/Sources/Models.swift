@@ -100,6 +100,9 @@ struct ConfigSettings: Decodable {
     let notion_root_page_id: String?
     let model_large: String?
     let model_small: String?
+    let console_public_host: String?
+    let cf_access_team_domain: String?
+    let cf_access_aud: String?
 }
 
 struct RepoEntry: Decodable, Identifiable, Hashable {

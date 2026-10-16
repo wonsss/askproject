@@ -1,4 +1,4 @@
-// 상시 실행 작업(봇·콘솔·매일 백업). 배포 앱은 번들의 Contents/Library/LaunchAgents plist를 SMAppService로 등록한다.
+// 상시 실행 작업(봇·콘솔·매일 백업, 그리고 켰을 때만 팀 공유 터널). 배포 앱은 번들의 Contents/Library/LaunchAgents plist를 SMAppService로 등록한다.
 // plist의 BundleProgram이 번들 기준 상대 경로라 앱을 옮기거나 업데이트해도 경로가 깨지지 않는다.
 // 개발 앱은 기존처럼 `askproject host on|off`(~/Library/LaunchAgents에 uv run plist)를 쓴다.
 
@@ -8,6 +8,9 @@ import ServiceManagement
 
 enum Agents {
     static let names = ["bot", "console", "backup"]
+    /// 팀 공유(웹 콘솔 Cloudflare 터널). 봇 켜기·끄기와 따로 설정 → 팀 공유에서만 켜고 끈다.
+    static let tunnel = "tunnel"
+    static var all: [String] { names + [tunnel] }
 
     static func label(_ name: String) -> String { "com.askproject.\(name)" }
 
@@ -32,6 +35,25 @@ enum Agents {
         return false
     }
 
+    static var tunnelEnabled: Bool { service(tunnel).status == .enabled }
+
+    /// 팀 공유 켜기·끄기. 켤 때 로그인 항목 허용이 필요하면 true(시스템 설정을 연다).
+    @discardableResult
+    static func setTunnel(_ on: Bool) throws -> Bool {
+        let s = service(tunnel)
+        if on {
+            if s.status != .enabled { try s.register() }
+            if s.status == .requiresApproval {
+                SMAppService.openSystemSettingsLoginItems()
+                return true
+            }
+            restart(tunnel)  // 이미 켜져 있었다면 새 토큰으로 다시 붙는다
+        } else if s.status == .enabled || s.status == .requiresApproval {
+            try s.unregister()
+        }
+        return false
+    }
+
     static func disableAll() throws {
         for n in names where service(n).status == .enabled || service(n).status == .requiresApproval {
             try service(n).unregister()
@@ -41,14 +63,14 @@ enum Agents {
     /// 업데이트 직전: 실행 중인 백엔드를 멈춘다. 파이썬은 모듈을 필요할 때 읽으므로, 교체 중인 번들에서
     /// 새·옛 파일이 섞여 읽히지 않게 한다. 등록(로그인 항목 허용)은 그대로 둔다.
     static func stopForUpdate() {
-        for n in names {
+        for n in all {
             launchctl(["bootout", "gui/\(getuid())/\(label(n))"])
         }
     }
 
     /// 업데이트 뒤 첫 실행: 멈춰 둔 작업을 새 번들로 다시 띄운다.
     static func reloadEnabled() {
-        for n in names where service(n).status == .enabled {
+        for n in all where service(n).status == .enabled {
             try? service(n).unregister()
             try? service(n).register()
         }

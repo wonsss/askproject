@@ -91,6 +91,7 @@ struct PanelView: View {
                         JobRow(name: "봇", job: s.jobs["bot"])
                         JobRow(name: "웹 콘솔", job: s.jobs["console"], up: model.consoleUp)
                         JobRow(name: "백업", job: s.jobs["backup"])
+                        if let t = s.jobs["tunnel"], t.state != "off" { JobRow(name: "팀 공유", job: t) }
                     }
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                         StatCard(title: "오늘 질문", value: "\(s.today.questions)건")

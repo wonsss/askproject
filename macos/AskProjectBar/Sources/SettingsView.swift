@@ -1,10 +1,10 @@
-// 설정 창: 연결(비밀값) · 레포 · 채널 · 맥 운영(절전·자동 로그인) · 도메인·용어(보기만) · 정보.
+// 설정 창: 연결(비밀값) · 레포 · 채널 · 팀 공유(웹 콘솔 Cloudflare 터널) · 맥 운영(절전·자동 로그인) · 도메인·용어(보기만) · 정보.
 // 저장은 모두 `askproject config set --json`(검증·원자적 쓰기, 비밀값은 Keychain).
 
 import AppKit
 import SwiftUI
 
-enum SettingsTab: Hashable { case connections, repos, channels, host, domains, about }
+enum SettingsTab: Hashable { case connections, repos, channels, share, host, domains, about }
 
 @MainActor
 final class SettingsModel: ObservableObject {
@@ -20,6 +20,13 @@ final class SettingsModel: ObservableObject {
     @Published var allowDM = false
     @Published var hostChannel = ""
     @Published var escalation = ""  // 비면 운영 채널을 쓴다
+    @Published var shareHost = ""
+    @Published var shareTeam = ""
+    @Published var shareAud = ""
+    @Published var shareToken = ""
+    @Published var shareOn = false
+    @Published var shareCheck: CheckResult?
+    @Published var checkingShare = false
 
     func load() async {
         let (c, out) = await Backend.json(ConfigState.self, ["config", "get", "--json"])
@@ -30,6 +37,64 @@ final class SettingsModel: ObservableObject {
         hostChannel = c?.settings.host_channel ?? ""
         escalation = c?.settings.escalation_channel ?? ""
         if escalation == hostChannel { escalation = "" }
+        shareHost = c?.settings.console_public_host ?? ""
+        shareTeam = c?.settings.cf_access_team_domain ?? ""
+        shareAud = c?.settings.cf_access_aud ?? ""
+        shareOn = Backend.isBundled && Agents.tunnelEnabled
+    }
+
+    /// 대시보드의 설치 명령 전체(`cloudflared service install eyJ…`)를 붙여넣어도 토큰만 쓴다.
+    static func tunnelToken(_ pasted: String) -> String {
+        let words = pasted.split(whereSeparator: \.isWhitespace).map(String.init)
+        return words.last(where: { $0.hasPrefix("eyJ") }) ?? pasted.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var shareTokenSaved: Bool { config?.secrets["ASKPROJECT_CLOUDFLARE_TUNNEL_TOKEN"] ?? false }
+
+    var shareComplete: Bool {
+        !shareHost.isEmpty && !shareTeam.isEmpty && !shareAud.isEmpty && (shareTokenSaved || !shareToken.isEmpty)
+    }
+
+    /// 저장 → 콘솔 다시 시작(공개 호스트·Access 값은 시작할 때 읽는다) → 켜져 있으면 터널도 새 토큰으로.
+    func saveShare() async {
+        var secrets: [String: String] = [:]
+        let token = Self.tunnelToken(shareToken)
+        if !token.isEmpty { secrets["ASKPROJECT_CLOUDFLARE_TUNNEL_TOKEN"] = token }
+        working = true
+        let r = await Backend.setConfig(settings: ["console_public_host": shareHost.trimmingCharacters(in: .whitespaces),
+                                                   "cf_access_team_domain": shareTeam.trimmingCharacters(in: .whitespaces),
+                                                   "cf_access_aud": shareAud.trimmingCharacters(in: .whitespaces)],
+                                        secrets: secrets)
+        working = false
+        note = CheckResult(ok: r.ok, detail: r.ok ? "저장했어요. 웹 콘솔을 다시 시작해요." : (r.error ?? "저장 실패"), step: nil)
+        guard r.ok else { return }
+        shareToken = ""
+        if Backend.isBundled {
+            Agents.restart("console")
+            if Agents.tunnelEnabled { Agents.restart(Agents.tunnel) }
+        }
+        await load()
+    }
+
+    func setShare(_ on: Bool) {
+        do {
+            let approval = try Agents.setTunnel(on)
+            note = CheckResult(ok: !approval, detail: approval
+                               ? "시스템 설정 → 로그인 항목에서 AskProject를 허용하면 터널이 켜져요."
+                               : (on ? "팀 공유를 켰어요. 30초쯤 뒤 '연결 확인'을 눌러 보세요." : "팀 공유를 껐어요. 이제 이 맥에서만 열려요."),
+                               step: nil)
+        } catch {
+            note = CheckResult(ok: false, detail: "팀 공유를 바꾸지 못했어요: \(error.localizedDescription)", step: nil)
+        }
+        shareOn = Agents.tunnelEnabled
+        shareCheck = nil
+    }
+
+    func checkShare() async {
+        checkingShare = true
+        let (r, out) = await Backend.json(CheckResult.self, ["setup", "check", "tunnel"])
+        checkingShare = false
+        shareCheck = r ?? CheckResult(ok: false, detail: out.errorLine, step: "tunnel")
     }
 
     /// 쉼표 구분 문자열 ↔ 체크 상태. 'dm'은 DM 허용 표시.
@@ -83,6 +148,7 @@ struct SettingsView: View {
                 connections.tabItem { Text("연결") }.tag(SettingsTab.connections)
                 reposTab.tabItem { Text("레포") }.tag(SettingsTab.repos)
                 channels.tabItem { Text("채널") }.tag(SettingsTab.channels)
+                share.tabItem { Text("팀 공유") }.tag(SettingsTab.share)
                 host.tabItem { Text("맥 운영") }.tag(SettingsTab.host)
                 domains.tabItem { Text("도메인·용어") }.tag(SettingsTab.domains)
                 about.tabItem { Text("정보") }.tag(SettingsTab.about)
@@ -224,6 +290,53 @@ struct SettingsView: View {
             .buttonStyle(.borderedProminent).disabled(m.working)
         }
         .task { if m.channels.isEmpty { await m.loadChannels() } }
+    }
+
+    private var share: some View {
+        SettingsPage {
+            SectionHeader("웹 콘솔을 팀원과 함께 보기",
+                          "팀원은 브라우저에서 https://<내 주소>로 들어오고, 허용 목록에 있는 이메일로 받은 코드로 로그인해요. 콘솔은 계속 이 맥(127.0.0.1)에만 열려 있고, Cloudflare Tunnel이 바깥과 이어 줘요.")
+            Text("콘솔에는 슬랙 질문 원문과 답이 그대로 남아 있어요. 허용 목록은 운영을 맡은 몇 명으로 좁게 두세요.")
+                .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            GroupBox {
+                VStack(alignment: .leading, spacing: 6) {
+                    shareStep(1, "Cloudflare에 도메인을 연결해 두세요(없으면 Cloudflare에서 살 수 있어요). Zero Trust는 50명까지 무료예요.")
+                    shareStep(2, "Zero Trust → Networks → Tunnels → Create a tunnel(Cloudflared). 설치 명령의 'eyJ…' 토큰(또는 명령 전체)을 아래에 붙여넣으세요. 명령은 실행하지 않아요.")
+                    shareStep(3, "같은 터널의 Public hostname: 서브도메인(예: askproject) + 내 도메인, 서비스는 HTTP · 127.0.0.1:8787.")
+                    shareStep(4, "Access → Applications → Add → Self-hosted, 같은 주소로 만들고 Allow 정책에 팀원 이메일을 넣으세요. 앱 Overview의 AUD 태그를 복사해요.")
+                    shareStep(5, "팀 도메인은 Zero Trust → Settings의 팀 이름 + .cloudflareaccess.com 이에요.")
+                    Button("Cloudflare Zero Trust 열기") { NSWorkspace.shared.open(URL(string: "https://one.dash.cloudflare.com/")!) }
+                        .buttonStyle(.link).padding(.top, 2)
+                }
+                .padding(6)
+            }
+            LabeledField("공개 주소", placeholder: "askproject.example.com", text: $m.shareHost)
+            LabeledField("Access 팀 도메인", placeholder: "myteam.cloudflareaccess.com", text: $m.shareTeam)
+            LabeledField("Access AUD 태그", placeholder: "64자리 16진수", text: $m.shareAud)
+            TokenField(title: "터널 토큰", placeholder: "eyJ…", text: $m.shareToken,
+                       problem: WizardModel.prefixProblem(SettingsModel.tunnelToken(m.shareToken), "eyJ", "터널 토큰"), saved: m.shareTokenSaved)
+            if !app.isApp {
+                Text("개발 앱에서는 켜고 끌 수 없어요. docs/operations.md의 CLI 방식(cloudflared + launchd)을 쓰세요.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            if let c = m.shareCheck { NoteView(note: c) }
+        } footer: {
+            Toggle("팀 공유 켜기", isOn: Binding(get: { m.shareOn }, set: { m.setShare($0) }))
+                .toggleStyle(.switch)
+                .disabled(!app.isApp || m.working || (!m.shareOn && !m.shareComplete))
+            Button(m.checkingShare ? "확인 중…" : "연결 확인") { Task { await m.checkShare() } }
+                .disabled(m.checkingShare || !m.shareComplete)
+            Spacer()
+            Button("저장") { Task { await m.saveShare() } }
+                .buttonStyle(.borderedProminent).disabled(m.working)
+        }
+    }
+
+    private func shareStep(_ n: Int, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text("\(n).").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            Text(text).font(.caption).fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var host: some View {
