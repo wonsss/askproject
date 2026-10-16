@@ -194,7 +194,7 @@ struct PanelView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Image(systemName: "externaldrive").foregroundStyle(.secondary)
-                Text(s.last_backup.map { "백업 \(Int($0.age_hours.rounded()))시간 전" + ($0.offsite ? "" : " · 서버 밖 복사 없음") }
+                Text(s.last_backup.map { "백업 \(Int($0.age_hours.rounded()))시간 전" + ($0.offsite ? "" : " · 맥 밖 사본 없음") }
                      ?? "백업 없음")
                     .font(.caption)
                 Spacer()

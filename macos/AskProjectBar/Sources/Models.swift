@@ -103,6 +103,7 @@ struct ConfigSettings: Decodable {
     let console_public_host: String?
     let cf_access_team_domain: String?
     let cf_access_aud: String?
+    let backup_copy_dir: String?
 }
 
 struct RepoEntry: Decodable, Identifiable, Hashable {

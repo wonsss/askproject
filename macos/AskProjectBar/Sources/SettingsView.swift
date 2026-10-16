@@ -1,4 +1,4 @@
-// 설정 창: 연결(비밀값) · 레포 · 채널 · 팀 공유(웹 콘솔 Cloudflare 터널) · 맥 운영(절전·자동 로그인) · 도메인·용어(보기만) · 정보.
+// 설정 창: 연결(비밀값) · 레포 · 채널 · 팀 공유(웹 콘솔 Cloudflare 터널) · 맥 운영(백업 사본·복구·절전·자동 로그인) · 도메인·용어(보기만) · 정보.
 // 저장은 모두 `askproject config set --json`(검증·원자적 쓰기, 비밀값은 Keychain).
 
 import AppKit
@@ -214,15 +214,40 @@ final class SettingsModel: ObservableObject {
         channelsError = list.map { $0.ok ? nil : $0.detail } ?? out.errorLine
     }
 
-    func save(settings: [String: Any] = [:], secrets: [String: String] = [:], repos: [[String: String]]? = nil) async {
+    func save(settings: [String: Any] = [:], secrets: [String: String] = [:], repos: [[String: String]]? = nil,
+              restartBot: Bool = true, saved: String? = nil) async {
         working = true
         let r = await Backend.setConfig(settings: settings, secrets: secrets, repos: repos)
         working = false
-        note = CheckResult(ok: r.ok, detail: r.ok ? "저장했어요. 실행 중인 봇에 적용하려고 다시 시작해요." : (r.error ?? "저장 실패"), step: nil)
+        let ok = saved ?? (restartBot ? "저장했어요. 실행 중인 봇에 적용하려고 다시 시작해요." : "저장했어요.")
+        note = CheckResult(ok: r.ok, detail: r.ok ? ok : (r.error ?? "저장 실패"), step: nil)
         if r.ok {
             self.secrets = [:]
-            AppModel.shared.restartBotIfRunning()
+            if restartBot { AppModel.shared.restartBotIfRunning() }
             await load()
+        }
+    }
+
+    /// 백업 사본 폴더(동기화 폴더) 고르기. 경로 검증·저장은 `config set`이 한다. 백업은 봇과 따로 돌아 재시작이 필요 없다.
+    func chooseBackupCopyDir() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "이 폴더에 사본 두기"
+        panel.message = "iCloud Drive나 Google Drive처럼 맥 밖으로 동기화되는 폴더를 고르세요. 백업할 때마다 사본을 여기에 둬요."
+        if let current = config?.settings.backup_copy_dir, !current.isEmpty {
+            panel.directoryURL = URL(fileURLWithPath: current)
+        } else {
+            let icloud = NSString(string: "~/Library/Mobile Documents/com~apple~CloudDocs").expandingTildeInPath
+            if FileManager.default.fileExists(atPath: icloud) { panel.directoryURL = URL(fileURLWithPath: icloud) }
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task {
+            await save(settings: ["backup_copy_dir": url.path], restartBot: false,
+                       saved: "저장했어요. 다음 백업부터 이 폴더에도 사본을 둬요. 지금 백업하면 바로 첫 사본이 생겨요.")
         }
     }
 }
@@ -468,6 +493,8 @@ struct SettingsView: View {
     private var host: some View {
         let power = app.status?.power
         return SettingsPage {
+            backupCopy
+            Divider().padding(.vertical, 4)
             SectionHeader("절전", "맥이 잠들면 봇도 멈춰요.")
             Picker("절전", selection: Binding(get: { power?.mode ?? "lid-open" }, set: { app.setPower($0) })) {
                 Text("기본 — 맥이 잠들면 봇도 멈춤").tag("default")
@@ -499,6 +526,41 @@ struct SettingsView: View {
                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension")!)
                 }
             }
+        }
+    }
+
+    /// 맥 밖 보관: 동기화 폴더에 백업 사본을 둔다. 백업 폴더는 이 맥 안에 있어서 맥을 잃으면 함께 사라진다.
+    private var backupCopy: some View {
+        let dir = m.config?.settings.backup_copy_dir ?? ""
+        return VStack(alignment: .leading, spacing: 8) {
+            SectionHeader("백업 사본 폴더",
+                          "백업은 이 맥 안에만 있어서, 맥을 잃거나 디스크가 고장 나면 질문·답 기록도 함께 사라져요. iCloud Drive나 Google Drive 폴더를 고르면 백업할 때마다(매일 03:30, '지금 백업') 그 폴더에도 사본을 둬요.")
+            HStack(spacing: 6) {
+                Image(systemName: dir.isEmpty ? "exclamationmark.triangle.fill" : "icloud")
+                    .foregroundStyle(dir.isEmpty ? .orange : .secondary)
+                Text(dir.isEmpty ? "정하지 않음 — 이 맥에만 백업이 있어요" : dir)
+                    .font(.callout).lineLimit(2).truncationMode(.middle).textSelection(.enabled)
+            }
+            if let b = app.status?.last_backup, !dir.isEmpty {
+                Text(b.offsite ? "최근 백업(\(b.name))의 사본이 이 폴더에 있어요."
+                               : "최근 백업의 사본이 아직 이 폴더에 없어요. '지금 백업'을 누르거나 다음 백업을 기다리세요.")
+                    .font(.caption).foregroundStyle(b.offsite ? Color.secondary : Color.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                Button(dir.isEmpty ? "폴더 고르기…" : "다른 폴더 고르기…") { m.chooseBackupCopyDir() }.disabled(m.working)
+                if !dir.isEmpty {
+                    Button("Finder에서 보기") { NSWorkspace.shared.open(URL(fileURLWithPath: dir)) }
+                    Button("사본 두지 않기") {
+                        Task { await m.save(settings: ["backup_copy_dir": ""], restartBot: false) }
+                    }
+                    .disabled(m.working)
+                }
+                Spacer()
+                Button("지금 백업") { app.backupNow() }.disabled(app.busy != nil)
+            }
+            Text("오래된 사본은 90일이 지나면 그 폴더에서 정리해요(askproject-로 시작하는 백업 파일만). 사본에는 질문·답 원문이 들어 있으니 팀 공유 폴더가 아닌 개인 폴더를 고르세요.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 
