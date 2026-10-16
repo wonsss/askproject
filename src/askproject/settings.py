@@ -20,6 +20,9 @@ DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 
 def update_env_file(path: Path, key: str, value: str | None) -> None:
     """`.env`의 KEY=value 한 줄을 바꾼다(None이면 지운다). 없으면 끝에 붙인다. 주석·다른 키는 그대로 둔다."""
+    if value is not None and any(c in value for c in "\r\n\0"):
+        # 줄바꿈이 들어가면 다른 키(예: ASKPROJECT_BACKUP_UPLOAD_CMD)를 끼워 넣을 수 있다
+        raise ValueError(f"{key} 값에 줄바꿈을 넣을 수 없어요")
     lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
     replaced = False
     for i, line in enumerate(lines):

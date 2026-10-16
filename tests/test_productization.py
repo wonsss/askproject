@@ -311,6 +311,29 @@ def test_diagnostics_redacts_secrets(tmp_path, monkeypatch):
     assert "[가림]" in everything and oct(out.stat().st_mode)[-3:] == "600"
 
 
+def test_diagnostics_scrubs_status_and_url_credentials():
+    """상태 JSON의 콘솔 토큰·최근 질문 원문, URL에 박힌 user:pass는 진단 묶음에 남기지 않는다."""
+    import json
+
+    from askproject import diagnostics
+
+    out = diagnostics._scrub_status(json.dumps({"console_key": "t" * 43, "recent": [{"id": "q1", "question": "김OO 고객 환불"}]}))
+    assert "t" * 43 not in out and "김OO" not in out and '"id": "q1"' in out
+    assert "hunter2" not in diagnostics.redact("upload failed: https://bob:hunter2@s3.example/x")
+    assert "x" * 30 not in diagnostics.redact('{"console_key": "' + "x" * 30 + '"}')
+
+
+def test_env_file_rejects_newline_injection(tmp_path):
+    """값에 줄바꿈이 있으면 다른 키를 끼워 넣을 수 있다 — 쓰지 않고 거부한다."""
+    from askproject.settings import update_env_file
+
+    env = tmp_path / ".env"
+    update_env_file(env, "ASKPROJECT_MODEL_LARGE", "claude-x")
+    with pytest.raises(ValueError):
+        update_env_file(env, "ASKPROJECT_MODEL_LARGE", "m\nASKPROJECT_BACKUP_UPLOAD_CMD=evil {file}")
+    assert env.read_text() == "ASKPROJECT_MODEL_LARGE=claude-x\n"
+
+
 def test_status_for_fresh_install(tmp_path, monkeypatch):
     """첫 실행(레포 미등록)에도 status가 깨지지 않고, 만료·허용 채널·중복 정보를 싣는다."""
     from types import SimpleNamespace

@@ -18,12 +18,28 @@ from askproject import paths
 
 SECRET_RE = re.compile(
     r"(xox[abposr]-[A-Za-z0-9-]+|xapp-[A-Za-z0-9-]+|sk-ant-[A-Za-z0-9_-]+|github_pat_[A-Za-z0-9_]+|gh[pousr]_[A-Za-z0-9]+"
-    r"|ntn_[A-Za-z0-9]+|secret_[A-Za-z0-9]+|eyJ[A-Za-z0-9+/=_.-]{20,}|(?<=key=)[A-Za-z0-9_-]{20,}|(?<=Bearer )[A-Za-z0-9._-]+)")
+    r"|ntn_[A-Za-z0-9]+|secret_[A-Za-z0-9]+|eyJ[A-Za-z0-9+/=_.-]{20,}|(?<=key=)[A-Za-z0-9_-]{20,}|(?<=Bearer )[A-Za-z0-9._-]+"
+    r"|(?<=://)[^/\s:@]+:[^/\s@]+(?=@)"  # URL에 박힌 user:pass (업로드 명령 오류 등)
+    r"|(?<=\"console_key\": \")[^\"]+)")
 TAIL_LINES = 400
 
 
 def redact(text: str) -> str:
     return SECRET_RE.sub("[가림]", text)
+
+
+def _scrub_status(text: str) -> str:
+    """상태 JSON에서 콘솔 실행 토큰과 최근 질문 원문을 뺀다(질문에는 개인정보·사내 내용이 있을 수 있다)."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return text
+    if data.get("console_key"):
+        data["console_key"] = "[가림]"
+    for r in data.get("recent") or []:
+        if isinstance(r, dict) and "question" in r:
+            r["question"] = "[가림]"
+    return json.dumps(data, ensure_ascii=False, indent=2)
 
 
 def _tail(path: Path, n: int = TAIL_LINES) -> str:
@@ -58,7 +74,7 @@ def build(settings, out: Path | None = None) -> Path:
         buf = io.StringIO()
         with redirect_stdout(buf):
             cmd_status(True, False)
-        files["status.json"] = buf.getvalue()
+        files["status.json"] = _scrub_status(buf.getvalue())
     except (Exception, SystemExit) as exc:
         files["status.json"] = f"상태 읽기 실패: {exc}"
     for log in sorted(settings.log_dir.glob("*.log")):
