@@ -58,7 +58,7 @@ struct TeamShareForm: View {
             }
 
             step(3, "공개 주소 정하기",
-                 "2번 대시보드에서 Continue를 누르면 공개 주소(Published application) 화면이 나와요. 이미 만든 터널이면 터널 → Routes 탭 → Add route → Published application. 서브도메인(예: askproject)과 내 도메인을 고르고, Service URL은 http://127.0.0.1:8787로 두세요.",
+                 "2번 대시보드에서 Continue를 누르면 공개 주소(Published application) 화면이 나와요. 이미 만든 터널이면 터널 → Routes 탭 → Add route → Published application. 서브도메인(예: askproject)과 내 도메인을 고르고, Service URL은 \(m.shareServiceURL)로 두세요.",
                  open: [], guides: []) {
                 HStack {
                     // 토큰을 넣었으면 그 터널의 Routes 화면을 바로 연다. 없으면 터널 목록(범용 바로 가기)
@@ -69,7 +69,7 @@ struct TeamShareForm: View {
                                    help: "2번 터널 토큰을 넣으면 이 터널의 Routes 화면으로 바로 열려요")
                     }
                     // verbatim: 문자열 리터럴이면 SwiftUI가 URL을 링크로 바꿔 버튼 안에서 파랗게 보인다
-                    Button { Self.copy("http://127.0.0.1:8787", m) } label: { Text(verbatim: "Service URL http://127.0.0.1:8787 복사") }
+                    Button { Self.copy(m.shareServiceURL, m) } label: { Text(verbatim: "Service URL \(m.shareServiceURL) 복사") }
                 }
                 .controlSize(.small)
                 LabeledField("공개 주소", placeholder: "askproject.example.com", text: $m.shareHost)

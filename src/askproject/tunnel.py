@@ -1,7 +1,7 @@
 """웹 콘솔 팀 공유: Cloudflare 대시보드에서 만든 터널(토큰 방식)을 cloudflared로 붙인다.
 
-- 콘솔은 그대로 127.0.0.1:8787에만 열린다. cloudflared가 나가는 연결로 Cloudflare에 붙고, 대시보드의
-  Public hostname(askproject.<도메인> → http://127.0.0.1:8787)으로 들어온 요청을 콘솔로 넘긴다.
+- 콘솔은 그대로 127.0.0.1:<콘솔 포트>(기본 18787, host.preferred_console_port)에만 열린다. cloudflared가 나가는 연결로 Cloudflare에 붙고, 대시보드의
+  Public hostname(askproject.<도메인> → http://127.0.0.1:<콘솔 포트>)으로 들어온 요청을 콘솔로 넘긴다.
 - 인증은 Cloudflare Access(이메일 로그인)가 터널 앞에서 하고, 콘솔은 Access JWT를 팀 키로 다시 검증한다
   (console/server.py). Access 설정 세 값이 없으면 콘솔이 공개 요청을 막으므로, 터널만 켜져서 열리는 일은 없다.
 - 터널 토큰은 비밀값이다(앱 Keychain, 개발 .env). 명령 인자가 아니라 환경변수 TUNNEL_TOKEN으로 넘긴다(ps에 안 보이게).
@@ -241,8 +241,10 @@ def check(s: Settings, client=None) -> dict:
         return {"ok": True, "step": "tunnel",
                 "detail": f"https://{host} — 터널 연결({connections}개)·Access 로그인 보호 확인. 팀원은 허용 목록의 이메일로 들어와요"}
     if r.status_code in (502, 530):
+        from askproject.host import preferred_console_port
+
         return fail(f"{host}가 이 터널로 연결되지 않아요(HTTP {r.status_code}) — 대시보드 터널의 Public hostname이 "
-                    "이 주소이고 서비스가 http://127.0.0.1:8787인지 확인하세요")
+                    f"이 주소이고 서비스가 http://127.0.0.1:{preferred_console_port(s)}인지 확인하세요")
     # 200·403 등: Cloudflare Access를 거치지 않고 응답이 왔다. 콘솔이 JWT 없는 요청은 막지만, 앞단 보호가 빠진 상태다
     return fail(f"{host}가 Access 로그인 없이 응답해요(HTTP {r.status_code}) — Zero Trust → Access → Applications에 "
                 "이 주소로 앱을 만들고 Allow 정책에 팀원 이메일을 넣으세요")

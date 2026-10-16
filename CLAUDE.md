@@ -25,7 +25,7 @@ uv run askproject ask "질문" [--domains <id>]
 uv run askproject eval [--ids q01] [--limit N]   # eval/golden.yaml → eval/results/
 uv run askproject serve             # 슬랙 봇 (Socket Mode)
 uv run askproject stats
-uv run askproject console           # 웹 콘솔 127.0.0.1:8787 (읽기 전용, API 비용 없음)
+uv run askproject console           # 웹 콘솔 127.0.0.1:18787 (읽기 전용, API 비용 없음, 포트 규칙은 docs/operations.md)
 uv run askproject backup | restore-check | maintenance   # DB 운영 (docs/operations.md)
 uv run askproject backups [--json] | restore <백업 파일> --yes [--json]   # 백업 목록 · 백업으로 DB 교체(봇·콘솔 끈 뒤)
 uv run askproject tunnel              # 웹 콘솔 팀 공유 터널 (설정 → 팀 공유, launchd 작업용)

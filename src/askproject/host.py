@@ -23,7 +23,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 LABEL_PREFIX = "com.askproject"
-CONSOLE_PORT = 8787
+# 8787은 wrangler dev 등 개발 서버와 자주 겹쳐 덜 흔한 번호를 기본으로 쓴다
+CONSOLE_PORT = 18787
+# 이 변경 전에 팀 공유를 켠 설치는 Cloudflare 대시보드 Service URL이 8787을 가리킨다(포트를 따로 정하지 않았을 때)
+LEGACY_CONSOLE_PORT = 8787
+PORT_FALLBACK_TRIES = 20
 POWER_MODES = ("default", "lid-open", "lid-closed")
 
 
@@ -80,12 +84,59 @@ class Job:
     calendar: dict | None = None  # 매일 실행 시각
 
 
-def jobs(repo: Path, uv: str, port: int = CONSOLE_PORT) -> list[Job]:
+def share_configured(settings) -> bool:
+    """팀 공유 주소를 정했는지. 정했으면 대시보드가 고정 포트를 가리키므로 콘솔 포트를 옮기지 않는다."""
+    return bool(getattr(settings, "console_public_host", None))
+
+
+def preferred_console_port(settings, cli_port: int | None = None) -> int:
+    """--port > ASKPROJECT_CONSOLE_PORT > (팀 공유를 이미 켠 설치면 8787) > 기본 18787"""
+    if cli_port:
+        return cli_port
+    if getattr(settings, "console_port", None):
+        return settings.console_port
+    return LEGACY_CONSOLE_PORT if share_configured(settings) else CONSOLE_PORT
+
+
+def port_free(port: int, host_: str = "127.0.0.1") -> bool:
+    """묶을 수 있고, 이미 받고 있는 프로그램도 없어야 빈 포트다(IPv6 *:포트로 받는 프로그램은 IPv4 bind만으론 안 보일 수 있다)."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(0.3)
+        if probe.connect_ex((host_, port)) == 0:
+            return False
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind((host_, port))
+        return True
+    except OSError:
+        return False
+
+
+def choose_console_port(settings, cli_port: int | None = None, free=port_free) -> tuple[int, str | None]:
+    """(쓸 포트, 알릴 말). 팀 공유가 꺼져 있으면 사용 중인 포트를 피해 다음 빈 포트로 옮긴다.
+    팀 공유를 켰으면 옮기지 않는다 — 대시보드 Service URL과 달라지면 공유 주소가 끊긴다."""
+    port = preferred_console_port(settings, cli_port)
+    if free(port):
+        return port, None
+    if share_configured(settings):
+        return port, (f"{port} 포트를 다른 프로그램이 쓰고 있어요. 팀 공유를 켜 둬서 포트를 옮기지 않아요"
+                      f"(Cloudflare 대시보드 Service URL이 http://127.0.0.1:{port}). 그 프로그램을 끄세요.")
+    for p in range(port + 1, port + PORT_FALLBACK_TRIES + 1):
+        if free(p):
+            return p, f"{port} 포트를 다른 프로그램이 쓰고 있어 {p}로 열었어요."
+    return port, f"{port}~{port + PORT_FALLBACK_TRIES} 포트가 모두 사용 중이에요."
+
+
+def jobs(repo: Path, uv: str, port: int | None = None) -> list[Job]:
     run = [uv, "run", "--project", str(repo), "askproject"]
     # 잠자기 방지는 serve가 스스로 건다(hold_awake). 절전 모드는 .env의 ASKPROJECT_POWER_MODE
     return [
         Job("bot", f"{LABEL_PREFIX}.bot", [*run, "serve"], keep_alive=True),
-        Job("console", f"{LABEL_PREFIX}.console", [*run, "console", "--port", str(port)], keep_alive=True),
+        # 포트를 박지 않으면 콘솔이 실행할 때마다 정한다(설정 포트 → 사용 중이면 빈 포트, choose_console_port)
+        Job("console", f"{LABEL_PREFIX}.console", [*run, "console", *(["--port", str(port)] if port else [])],
+            keep_alive=True),
         Job("backup", f"{LABEL_PREFIX}.backup", [*run, "nightly"], keep_alive=False, calendar={"Hour": 3, "Minute": 30}),
     ]
 
@@ -125,7 +176,7 @@ def _loaded(label: str) -> bool:
     return _launchctl("print", f"{_domain()}/{label}").returncode == 0
 
 
-def on(repo: Path, log_dir: Path, port: int = CONSOLE_PORT) -> list[str]:
+def on(repo: Path, log_dir: Path, port: int | None = None) -> list[str]:
     uv = shutil.which("uv") or "/opt/homebrew/bin/uv"
     log_dir.mkdir(parents=True, exist_ok=True)
     _agents_dir().mkdir(parents=True, exist_ok=True)
@@ -140,16 +191,6 @@ def on(repo: Path, log_dir: Path, port: int = CONSOLE_PORT) -> list[str]:
             raise RuntimeError(f"{job.label} 등록 실패: {r.stderr.strip()}")
         done.append(job.name)
     return done
-
-
-def installed_port() -> int:
-    """등록된 콘솔 plist의 --port 값. 없거나 읽기 실패면 기본 포트."""
-    p = _agents_dir() / f"{LABEL_PREFIX}.console.plist"
-    try:
-        args = plistlib.loads(p.read_bytes()).get("ProgramArguments", [])
-        return int(args[args.index("--port") + 1])
-    except Exception:
-        return CONSOLE_PORT
 
 
 def off() -> list[str]:

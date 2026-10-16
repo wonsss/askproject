@@ -21,7 +21,7 @@ sync:  ## 레포 받기 + 인덱싱 + 노션·슬랙 수집
 serve:  ## 슬랙 봇 실행
 	uv run askproject serve
 
-console:  ## 웹 콘솔 (127.0.0.1:8787)
+console:  ## 웹 콘솔 (127.0.0.1:18787)
 	uv run askproject console
 
 version:  ## 현재 버전 (네 곳이 같은지 확인)

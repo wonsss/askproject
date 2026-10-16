@@ -78,7 +78,7 @@ cp .env.example .env                    # 슬랙·GitHub·Claude 값 채우기
 uv run askproject doctor --online       # 환경·키·크레딧·노션·DB·백업 점검
 uv run askproject sync                  # 레포 받기(GitHub API) + 인덱싱 + 노션·슬랙 수집 (Claude 비용 없음)
 uv run askproject serve                 # 슬랙 봇
-uv run askproject console               # 웹 콘솔 http://127.0.0.1:8787
+uv run askproject console               # 웹 콘솔 http://127.0.0.1:18787 (사용 중이면 빈 포트로)
 ```
 
 자주 쓰는 명령은 `make`로 봅니다(test·doctor·sync·serve·console·release 등).

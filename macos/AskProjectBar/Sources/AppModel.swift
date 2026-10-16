@@ -225,7 +225,7 @@ final class AppModel: ObservableObject {
         Task {
             let state = await updateConsoleState()
             if state == .portTaken {
-                let port = status.flatMap { URL(string: $0.console_url)?.port }.map(String.init) ?? "8787"
+                let port = status.flatMap { URL(string: $0.console_url)?.port }.map(String.init) ?? "18787"
                 message = "\(port) 포트를 다른 프로그램이 쓰고 있어 웹 콘솔이 뜨지 못했어요. 그 프로그램을 끈 뒤 콘솔을 다시 켜세요."
                 return
             }

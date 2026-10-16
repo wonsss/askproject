@@ -166,7 +166,9 @@ uv run askproject redact <query_id> --reason "질문에 실명·연락처 포함
 
 ## 웹 콘솔 외부 공개 (Cloudflare Tunnel + Access)
 
-콘솔은 여전히 `127.0.0.1:8787`에만 바인딩하고, 맥북의 `cloudflared`가 나가는 연결로 Cloudflare에 붙는다. Cloudflare Access가 터널 앞에서 이메일 인증을 거므로 허용된 사람만 열린다.
+콘솔은 여전히 `127.0.0.1:<콘솔 포트>`에만 바인딩하고, 맥북의 `cloudflared`가 나가는 연결로 Cloudflare에 붙는다. Cloudflare Access가 터널 앞에서 이메일 인증을 거므로 허용된 사람만 열린다.
+
+**콘솔 포트**: 기본 `18787`(`8787`은 `wrangler dev` 등 개발 서버와 자주 겹쳐 옮겼다). `ASKPROJECT_CONSOLE_PORT`로 고정할 수 있다. 팀 공유가 꺼져 있으면 포트가 사용 중일 때 다음 빈 포트(최대 20개)로 옮기고, 앱·`status --json`은 `data/console.json`의 실제 포트를 따라간다. 팀 공유를 켜면 대시보드 Service URL과 같아야 하므로 옮기지 않는다 — 앱에서 팀 공유를 처음 저장할 때 그 포트를 `ASKPROJECT_CONSOLE_PORT`로 고정하고, 포트를 정하지 않고 이미 팀 공유를 쓰던 설치는 예전 포트 `8787`을 그대로 쓴다. 옮기려면 `ASKPROJECT_CONSOLE_PORT=18787`을 넣고 대시보드 Service URL을 같이 바꾼 뒤 콘솔을 다시 켠다. 포트가 겹치면 메뉴 막대 앱에 '포트를 다른 프로그램이 사용 중'이 뜬다(콘솔의 `X-AskProject-Console` 헤더로 구별).
 
 **하지 말 것**: `0.0.0.0` 바인딩(같은 네트워크 전체에 감사 로그가 열린다), `cloudflared tunnel --url`(trycloudflare.com 임시 주소 — 주소만 알면 누구나 연다). 콘솔에는 슬랙 질문 원문이 영구 보존되므로, Allow 정책은 운영자 몇 명으로 좁히는 것을 기본으로 한다.
 
@@ -176,7 +178,7 @@ uv run askproject redact <query_id> --reason "질문에 실명·연락처 포함
 
 1. Cloudflare에 도메인을 연결해 둔다(필수). Zero Trust는 50명까지 무료.
 2. **Networking → Tunnels → Create a tunnel**(Cloudflared) — [바로 가기](https://dash.cloudflare.com/?to=/:account/tunnels). 설치 명령은 실행하지 않고, 명령 전체(또는 `eyJ…` 토큰)를 앱의 **터널 토큰**에 붙여 넣고 **저장하고 터널 켜기**. 대시보드는 터널이 연결돼야 **Continue**가 켜진다 — 그래서 터널은 토큰만으로 뜬다(Access 값이 없는 동안 콘솔은 공개 주소 요청을 421·403으로 거절).
-3. **Continue** → **Published application**(이미 만든 터널이면 터널 → **Routes** 탭 → **Add route**): `askproject.<도메인>`, Service URL `http://127.0.0.1:8787`.
+3. **Continue** → **Published application**(이미 만든 터널이면 터널 → **Routes** 탭 → **Add route**): `askproject.<도메인>`, Service URL은 앱 화면에 보이는 주소(기본 `http://127.0.0.1:18787`).
 4. **Zero Trust → Access controls → Applications → Create new application → Self-hosted** — [바로 가기](https://dash.cloudflare.com/?to=/:account/one/access-controls/apps). 같은 주소로 만들고 Allow 정책에 팀원 이메일을 넣는다. 만든 앱의 **Additional settings 탭 → AUD tag**를 앱에 붙여 넣는다.
 5. 앱의 **공개 주소에서 찾기**로 팀 도메인을 채운다(`setup team-domain --host …`가 Access 로그인 리다이렉트 `https://<팀>.cloudflareaccess.com/…`에서 읽는다). 직접 넣으려면 Zero Trust → Overview → Account details → Team domain. → **저장** → **팀 공유 켜기** → **연결 확인**.
 
@@ -198,7 +200,7 @@ uv run askproject redact <query_id> --reason "질문에 실명·연락처 포함
 | 항목 | 값 |
 | --- | --- |
 | 공개 주소 | `https://askproject.<내 도메인>` (예: Cloudflare에 등록된 도메인의 서브도메인) |
-| 터널 | `cloudflared tunnel create askproject-console` → `~/.cloudflared/config.yml`에 `askproject.<도메인>: http://127.0.0.1:8787` ingress, 자격증명 `~/.cloudflared/*.json` |
+| 터널 | `cloudflared tunnel create askproject-console` → `~/.cloudflared/config.yml`에 `askproject.<도메인>: http://127.0.0.1:<콘솔 포트>` ingress(`ASKPROJECT_CONSOLE_PORT`로 고정), 자격증명 `~/.cloudflared/*.json` |
 | 상시 실행 | launchd `com.askproject.tunnel` (`~/Library/LaunchAgents/`), 로그 `data/logs/tunnel.log` |
 | 인증 | Zero Trust → Access controls → Applications의 `AskProject 콘솔` 앱, Allow 정책(이메일 목록) |
 | 콘솔 쪽 검증 | `.env`에 `ASKPROJECT_CONSOLE_PUBLIC_HOST=askproject.<도메인>`, `ASKPROJECT_CF_ACCESS_TEAM_DOMAIN=<팀>.cloudflareaccess.com`, `ASKPROJECT_CF_ACCESS_AUD=<Access 앱의 AUD 태그>`. 공개 호스트로 온 요청은 Access JWT(`Cf-Access-Jwt-Assertion`)를 팀 키로 검증한다. 셋이 없으면 공개 요청을 막는다(로컬은 실행당 토큰) |

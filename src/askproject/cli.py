@@ -5,7 +5,7 @@
   askproject eval [--ids q01,q02] [--limit N]  골든 세트 평가 → eval/results/
   askproject serve                            슬랙 봇 실행 (주기적 동기화 포함)
   askproject stats                            감사 로그 요약
-  askproject console [--port 8787]            웹 콘솔 (로컬 전용, 읽기 전용, API 비용 없음)
+  askproject console [--port 18787]           웹 콘솔 (로컬 전용, 읽기 전용, API 비용 없음)
   askproject host on|off|status|restart       맥북 호스트 모드 (봇·콘솔 상시 실행, 잠자기 방지, 매일 백업)
   askproject provider [api|subscription]      LLM 인증 경로 확인·전환 (subscription=로컬 claude CLI 구독)
   askproject power [default|lid-open|lid-closed]  맥북 절전 모드 확인·전환 (덮개 닫힘은 전원 연결 시만)
@@ -211,7 +211,7 @@ def cmd_stats() -> None:
     print("피드백 " + (", ".join(f"{r['value']} {r['n']}" for r in fb) or "없음"))
 
 
-def cmd_console(port: int) -> None:
+def cmd_console(port: int | None) -> None:
     """웹 콘솔. Claude API를 쓰지 않으므로 API 키 없이도 뜬다. 로컬(127.0.0.1)에서만 연다."""
     import uvicorn
 
@@ -221,11 +221,17 @@ def cmd_console(port: int) -> None:
     from askproject.pipeline.scoping import load_domain_map
     from askproject.settings import Settings
 
+    from askproject import host
+
     s = Settings()
     repo = load_repos(s.config_dir)[0]
     names = {d.id: d.name for d in load_domain_map(s.config_dir).domains}
     import os
     import secrets
+
+    port, note = host.choose_console_port(s, port)
+    if note:
+        print(f"⚠️ {note}")
 
     data = ConsoleData(s.db_path, repo.name, repo.web_base, paths.eval_results_dir(), names)
     token = secrets.token_urlsafe(32)  # 실행마다 새로. 앱은 data/console.json에서 읽어 URL에 붙인다
@@ -515,7 +521,7 @@ def cmd_host(action: str, port: int, job: str = "bot") -> None:
         sys.exit("앱 모드에서는 메뉴 막대 앱의 켜기·끄기를 쓰세요(SMAppService로 등록돼요).")
     if action == "on":
         names = host.on(Path.cwd(), logs, port)
-        print(f"켰어요: {', '.join(names)} · 콘솔 http://127.0.0.1:{port} · 로그 {logs}/")
+        print(f"켰어요: {', '.join(names)} · 콘솔 http://127.0.0.1:{port or host.preferred_console_port(s)} · 로그 {logs}/")
         print(f"절전 모드: {s.power_mode} ({POWER_LABELS[s.power_mode]}) — 바꾸려면 askproject power { '|'.join(host.POWER_MODES) }")
         if s.power_mode != "default":
             print("켜져 있는 동안 맥북은 잠자기에 들어가지 않아요(전원 연결 권장). 끌 때: askproject host off")
@@ -729,14 +735,14 @@ def main() -> None:
     ho = sub.add_parser("host", help="맥북 호스트 모드: 봇·콘솔 상시 실행, 잠자기 방지, 매일 백업 (macOS)")
     ho.add_argument("action", choices=["on", "off", "status", "restart"])
     ho.add_argument("job", nargs="?", default="bot", choices=["bot", "console", "backup"], help="restart 대상 (기본 bot)")
-    ho.add_argument("--port", type=int, default=8787)
+    ho.add_argument("--port", type=int, default=None, help="콘솔 포트 고정 (기본: 실행할 때 정함, ASKPROJECT_CONSOLE_PORT)")
     pv = sub.add_parser("provider", help="LLM 인증 경로 확인·전환 (api=API 키, subscription=로컬 claude CLI 구독)")
     pv.add_argument("mode", nargs="?", choices=["api", "subscription"])
     pw = sub.add_parser("power", help="맥북 절전 모드 확인·전환 (default|lid-open|lid-closed)")
     pw.add_argument("mode", nargs="?", choices=["default", "lid-open", "lid-closed"])
     sub.add_parser("tunnel", help="웹 콘솔 팀 공유: Cloudflare 터널(대시보드 토큰) 실행 — launchd 작업용")
     con = sub.add_parser("console", help="웹 콘솔 (로컬 전용, 읽기 전용)")
-    con.add_argument("--port", type=int, default=8787)
+    con.add_argument("--port", type=int, default=None, help="기본 ASKPROJECT_CONSOLE_PORT 또는 18787")
     dr = sub.add_parser("doctor")
     dr.add_argument("--online", action="store_true", help="슬랙·Claude·GitHub·노션 연결까지 확인")
     dr.add_argument("--json", action="store_true", help="앱용 JSON (실패 항목에 고칠 마법사 단계 포함)")

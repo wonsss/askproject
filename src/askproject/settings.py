@@ -97,6 +97,9 @@ class Settings(BaseSettings):
     # 호스트 하트비트 채널 ID. 같은 슬랙 앱으로 봇이 두 대 켜지면 이벤트가 나뉘므로 감지한다. 비면 escalation_channel
     host_channel: str | None = None
 
+    # 웹 콘솔 포트. 비우면 18787(팀 공유를 이미 켠 설치는 8787). 팀 공유가 꺼져 있으면 사용 중일 때 다음 빈 포트로 옮긴다
+    console_port: int | None = Field(default=None, ge=1024, le=65535)
+
     # 웹 콘솔 팀 공개(Cloudflare Tunnel + Access). 셋 다 있어야 공개 호스트 요청을 받는다(Access JWT 검증)
     console_public_host: str | None = None  # 예: askproject.example.com
     cf_access_team_domain: str | None = None  # 예: myteam.cloudflareaccess.com

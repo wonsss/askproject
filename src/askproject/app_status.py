@@ -32,7 +32,7 @@ def _midnight() -> float:
     return time.mktime((t.tm_year, t.tm_mon, t.tm_mday, 0, 0, 0, t.tm_wday, t.tm_yday, t.tm_isdst))
 
 
-def collect(settings, repo_name: str, web_base: str, port: int = host.CONSOLE_PORT,
+def collect(settings, repo_name: str, web_base: str, port: int | None = None,
             check_claude: bool = False) -> dict:
     from askproject.console.data import ROUTE_KO, ConsoleData
 
@@ -43,8 +43,9 @@ def collect(settings, repo_name: str, web_base: str, port: int = host.CONSOLE_PO
     jobs = host.job_states(getattr(settings, "log_dir", settings.data_dir / "logs"))
     provider = getattr(settings, "llm_provider", "api")
     console = _console_info(settings.data_dir)
+    port = port or host.preferred_console_port(settings)  # 콘솔이 꺼져 있을 때 보여 줄 주소
     if console:
-        port = console.get("port", port)
+        port = console.get("port", port)  # 사용 중인 포트를 피해 옮겼으면 실제 포트
     allowed = getattr(settings, "allowed_channels", "")
     out: dict = {
         "generated_at": time.time(),

@@ -121,6 +121,7 @@ struct ConfigState: Decodable {
     let secrets: [String: Bool]
     let repos: [RepoEntry]
     let tunnel: TunnelInfo?  // 저장된 터널 토큰의 계정·터널 ID(비밀 아님). 없으면 null
+    let console_share_url: String?  // 대시보드 Service URL(팀 공유를 켜면 콘솔이 이 포트에 고정)
 }
 
 struct TunnelInfo: Decodable {

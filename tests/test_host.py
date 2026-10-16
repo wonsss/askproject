@@ -33,6 +33,8 @@ def test_launchd_plists(tmp_path):
     assert not any(k.startswith("ANTHROPIC") for k in bot["EnvironmentVariables"])  # 셸 키가 끼어들지 않게
     console = plist_for(js["console"], repo, logs)
     assert console["ProgramArguments"][-3:] == ["console", "--port", "8787"] and "caffeinate" not in console["ProgramArguments"][0]
+    default = {j.name: j for j in jobs(repo, "/opt/homebrew/bin/uv")}["console"]
+    assert default.args[-1] == "console"  # 포트를 박지 않으면 콘솔이 실행할 때 정한다
     backup = plist_for(js["backup"], repo, logs)
     assert backup["StartCalendarInterval"] == {"Hour": 3, "Minute": 30} and "KeepAlive" not in backup
     assert backup["ProgramArguments"][-1] == "nightly"  # 백업 → 복구 확인 → 정리를 한 프로세스에서
@@ -122,3 +124,33 @@ def test_restart_from_not_loaded(fake_launchd, tmp_path):
     calls, _, _ = fake_launchd
     assert host.restart_from("bot", tmp_path) == ("not_loaded", None)
     assert not any(c[0] == "kickstart" for c in calls)
+
+
+class _S:
+    def __init__(self, console_port=None, console_public_host=None):
+        self.console_port, self.console_public_host = console_port, console_public_host
+
+
+def test_console_port_preference():
+    assert host.preferred_console_port(_S()) == 18787
+    assert host.preferred_console_port(_S(console_public_host="ask.example.com")) == 8787  # 팀 공유를 이미 켠 설치
+    assert host.preferred_console_port(_S(console_port=9000, console_public_host="ask.example.com")) == 9000
+    assert host.preferred_console_port(_S(console_port=9000), cli_port=9100) == 9100
+
+
+def test_console_port_moves_only_without_team_share():
+    taken = {18787, 18788}
+    free = lambda p: p not in taken  # noqa: E731
+    assert host.choose_console_port(_S(), free=free)[0] == 18789  # 빈 포트로 옮긴다
+    assert host.choose_console_port(_S(), free=lambda p: True) == (18787, None)
+    port, note = host.choose_console_port(_S(console_port=18787, console_public_host="ask.example.com"), free=free)
+    assert port == 18787 and "팀 공유" in note  # 대시보드 Service URL과 달라지면 끊기므로 옮기지 않는다
+
+
+def test_port_free_sees_listener():
+    import socket
+
+    with socket.socket() as srv:
+        srv.bind(("127.0.0.1", 0))
+        srv.listen()
+        assert not host.port_free(srv.getsockname()[1])

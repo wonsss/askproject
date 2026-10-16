@@ -60,6 +60,9 @@ final class SettingsModel: ObservableObject {
         currentTunnelIDs.map { CloudflareDash.url(CloudflareDash.routes(tunnel: $0.tunnel), account: $0.account) }
     }
 
+    /// 대시보드 Service URL. 팀 공유를 켜면 콘솔이 이 포트에서 옮기지 않는다.
+    var shareServiceURL: String { config?.console_share_url ?? "http://127.0.0.1:18787" }
+
     /// Access 앱 목록. 계정 ID를 알면 그 계정 주소로 바로 연다.
     var accessAppsURL: URL { CloudflareDash.url(CloudflareDash.accessApps, account: currentTunnelIDs?.account) }
 

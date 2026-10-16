@@ -52,6 +52,7 @@ class SettingsPatch(BaseModel):
     slack_source_days: int | None = Field(default=None, ge=1, le=365)
     notion_root_page_id: str | None = None
     # 팀 공유(웹 콘솔 Cloudflare Tunnel + Access). 셋이 다 있어야 콘솔이 공개 요청을 받는다
+    console_port: int | None = Field(default=None, ge=1024, le=65535)
     console_public_host: str | None = None
     cf_access_team_domain: str | None = None
     cf_access_aud: str | None = None
@@ -176,7 +177,7 @@ def get(settings: Settings) -> dict:
     secrets = {}
     for field, account in keychain.FIELDS.items():
         secrets[account] = bool(getattr(settings, field))
-    from askproject import tunnel
+    from askproject import host, tunnel
 
     token = settings.cloudflare_tunnel_token
     return {
@@ -187,6 +188,8 @@ def get(settings: Settings) -> dict:
         "repos": [{k: r.get(k, "") for k in ("name", "url", "ref", "description")} for r in (raw or {}).get("repos") or []],
         # 팀 공유: 저장된 터널 토큰에서 읽은 계정·터널 ID와 Routes 주소(토큰 값 자체는 돌려주지 않는다)
         "tunnel": tunnel.dashboard_info(token.get_secret_value() if token else None),
+        # 대시보드 Service URL에 넣을 주소. 팀 공유를 켜면 콘솔은 이 포트에서 옮기지 않는다
+        "console_share_url": f"http://127.0.0.1:{host.preferred_console_port(settings)}",
     }
 
 
@@ -194,7 +197,14 @@ def apply(settings: Settings, patch: ConfigPatch) -> list[str]:
     """검증된 변경을 쓴다. 바뀐 항목 이름 목록을 돌려준다."""
     changed: list[str] = []
     env = settings.env_path
-    for field, value in patch.settings.model_dump(exclude_none=True).items():
+    values = patch.settings.model_dump(exclude_none=True)
+    if values.get("console_public_host") and not settings.console_public_host and not settings.console_port \
+            and "console_port" not in values:
+        # 팀 공유를 처음 켤 때 지금 포트로 고정한다. 그대로 두면 '팀 공유를 이미 켠 설치'로 보고 옛 포트(8787)를 쓴다
+        from askproject.host import CONSOLE_PORT
+
+        values["console_port"] = CONSOLE_PORT
+    for field, value in values.items():
         update_env_file(env, _env_key(field), None if value == "" else str(value))
         changed.append(field)
     for account, value in patch.secrets.items():

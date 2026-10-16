@@ -67,6 +67,18 @@ def test_config_set_share_settings_and_token_to_keychain(app_home):
     assert got["settings"]["cf_access_aud"] == AUD and "eyJ" not in json.dumps(got)
     assert got["tunnel"]["routes_url"] == f"https://dash.cloudflare.com/{ACCOUNT_ID}/tunnels/{TUNNEL_ID}/routes"
     assert "c2VjcmV0" not in json.dumps(got)  # 토큰의 비밀(s)은 내보내지 않는다
+    # 팀 공유를 처음 켜면 지금 포트(18787)로 고정 — 대시보드 Service URL과 같아야 한다
+    assert "ASKPROJECT_CONSOLE_PORT=18787" in env and got["console_share_url"] == "http://127.0.0.1:18787"
+
+
+def test_share_already_on_keeps_legacy_port(app_home):
+    """이 변경 전에 팀 공유를 켠 설치(포트 미지정)는 대시보드가 가리키는 8787을 그대로 쓴다."""
+    s = Settings()
+    s.env_path.parent.mkdir(parents=True, exist_ok=True)
+    s.env_path.write_text("ASKPROJECT_CONSOLE_PUBLIC_HOST=ask.example.com\n")
+    assert config_store.get(Settings())["console_share_url"] == "http://127.0.0.1:8787"
+    config_store.set_from_json(Settings(), json.dumps({"settings": {"cf_access_aud": AUD}}))
+    assert "ASKPROJECT_CONSOLE_PORT" not in Settings().env_path.read_text()  # 다른 항목을 저장해도 포트를 바꾸지 않는다
 
 
 @pytest.mark.parametrize("patch, msg", [
