@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import re
+from urllib.parse import urlparse
 
 import httpx
 from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
@@ -40,6 +41,11 @@ def channel_allowed(allowed: set[str] | None, channel: str) -> bool:
     return "dm" in allowed if channel.startswith("D") else channel in allowed
 
 
+def _escape_mrkdwn(text: str) -> str:
+    """사용자 글을 mrkdwn에 그대로 넣으면 <!channel>·위장 링크가 살아난다."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 NOT_ALLOWED = "이 채널에서는 답하지 않도록 설정돼 있어요. 봇 관리자에게 허용된 채널을 물어봐 주세요."
 
 
@@ -53,8 +59,12 @@ def build_app(bot_token: str, service: AnswerService, store: Store, escalation_c
         img = next((f for f in files or [] if f.get("mimetype") in ALLOWED_TYPES and f.get("size", 0) <= MAX_BYTES), None)
         if not img or not llm:
             return None
+        url = img.get("url_private_download") or ""
+        u = urlparse(url)
+        if img.get("is_external") or u.scheme != "https" or u.hostname != "files.slack.com":
+            return None  # 봇 토큰은 슬랙 파일 서버에만 보낸다(외부 파일 URL로 새지 않게)
         async with httpx.AsyncClient(timeout=30) as http:
-            r = await http.get(img["url_private_download"], headers={"Authorization": f"Bearer {bot_token}"})
+            r = await http.get(url, headers={"Authorization": f"Bearer {bot_token}"})
             r.raise_for_status()
         return await extract_screen(llm, r.content, img["mimetype"])
 
@@ -221,11 +231,13 @@ def build_app(bot_token: str, service: AnswerService, store: Store, escalation_c
         if not escalation_channel:
             return
         q = store.execute("SELECT question, channel, thread_ts FROM queries WHERE id=?", (query_id,)).fetchone()
+        if not q:
+            return
         a = store.execute("SELECT confidence FROM query_results WHERE query_id=?", (query_id,)).fetchone()
         permalink = await client.chat_getPermalink(channel=q["channel"], message_ts=q["thread_ts"])
         await client.chat_postMessage(
             channel=escalation_channel,
-            text=(f"<@{body['user']['id']}>님의 확인 요청\n*질문* {q['question']}\n"
+            text=(f"<@{body['user']['id']}>님의 확인 요청\n*질문* {_escape_mrkdwn(q['question'])}\n"
                   f"*봇 확신도* {a['confidence'] if a else '-'}\n<{permalink['permalink']}|원래 스레드 보기>"),
         )
 
