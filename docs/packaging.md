@@ -14,7 +14,8 @@ AskProject.app/Contents/
 └─ Resources/
    ├─ backend/python/             python-build-standalone 3.12 + site-packages(의존성·askproject·claude 바이너리)
    ├─ backend/bin/rg              ripgrep 공식 릴리스(정적 링크)
-   ├─ backend/BUILD_INFO.json     버전·계약(protocol)·claude CLI·rg 버전
+   ├─ backend/bin/cloudflared     cloudflared 공식 릴리스(웹 콘솔 팀 공유, Cloudflare 서명 유지)
+   ├─ backend/BUILD_INFO.json     버전·계약(protocol)·claude CLI·rg·cloudflared 버전
    └─ THIRD_PARTY_NOTICES.txt
 ```
 
@@ -41,6 +42,7 @@ NOTARY_PROFILE=askproject bash scripts/build-dmg.sh   # 공증 + 스테이플 + 
 
 - `build-backend-bundle.sh`는 uv가 관리하는 PBS 인터프리터를 복사하고, venv 없이 그 site-packages에 `uv.lock` 기준으로 설치한다. venv의 `pyvenv.cfg`는 기반 인터프리터를 절대 경로로 가리켜서, 앱을 옮기면 깨지기 때문이다.
 - 표준 라이브러리 중 tkinter·test·idlelib 등은 지우고, `__pycache__`는 `--invalidation-mode unchecked-hash`로 미리 컴파일한다. 실행할 때는 `-B`라서 번들에 아무것도 쓰지 않는다. 번들에 쓰면 서명이 깨진다.
+- cloudflared는 공식 릴리스(`CFD_VER`, 약 40MB)를 스크립트에 고정한 sha256(GitHub 릴리스 자산 digest)으로 확인한다. 올릴 때는 두 값을 함께 바꾼다. 터널은 `--no-autoupdate`로 띄워 번들 안의 바이너리를 스스로 바꾸지 않는다.
 - rg는 공식 릴리스(15.2.0)를 sha256으로 확인한다. Homebrew 판은 `/opt/homebrew/opt/pcre2` dylib에 묶여 있어 쓸 수 없다.
 - Sparkle 2.10.0은 sha256을 고정해 받는다(`scripts/fetch-sparkle.sh`).
 - 앱 아이콘은 커밋된 `macos/AskProjectBar/AppIcon.icns`를 두 빌드 스크립트가 복사한다. 디자인은 `scripts/make-icon.swift`에 코드로 있고, 고친 뒤 `bash scripts/make-icon.sh`로 icns를 다시 만들어 커밋한다.
@@ -54,6 +56,7 @@ NOTARY_PROFILE=askproject bash scripts/build-dmg.sh   # 공증 + 스테이플 + 
 |---|---|---|
 | `.so`·`.dylib`·`rg`·`python3.12` | 우리 Developer ID | 없음 — arm64 libffi는 정적 트램펄린이라 ctypes 콜백·cryptography가 entitlement 없이 동작 (W0 확인) |
 | `claude` (claude-agent-sdk 휠) | **다시 서명하지 않음** — Anthropic PBC Developer ID(Q6L2SF6YDW) 그대로 | Anthropic이 넣은 `allow-jit`·`allow-unsigned-executable-memory` 등. 다시 서명하면 Bun 런타임이 JIT 메모리를 못 써서 죽는다. 스크립트가 서명 주체를 확인한다 |
+| `cloudflared` (backend/bin) | **다시 서명하지 않음** — Cloudflare Inc. Developer ID(68WVV388M8) 그대로(Hardened Runtime·타임스탬프 있음) | 없음. 스크립트가 서명 주체를 확인한다 |
 | Sparkle XPC·Autoupdate·Updater.app | 우리 Developer ID | Downloader.xpc는 `--preserve-metadata=entitlements` |
 | 런처·앱 | 우리 Developer ID | 앱: 없음(샌드박스 아님) |
 
@@ -132,7 +135,7 @@ xcrun notarytool store-credentials askproject --apple-id <Apple ID> --team-id AE
 - claude-agent-sdk 파이썬 래퍼는 MIT다. [Agent SDK 문서](https://code.claude.com/docs/en/agent-sdk/overview)의 License and terms 절에 따르면, SDK 사용은 "자기 고객·최종 사용자에게 제공하는 제품·서비스를 구동할 때를 포함해" [Anthropic Commercial Terms](https://www.anthropic.com/legal/commercial-terms)가 적용되고, 구성 요소에 별도 LICENSE가 있으면 그것을 따른다. 휠의 `_bundled/` 안에는 `claude` 바이너리만 있고 LICENSE 파일이 없으므로 Commercial Terms가 적용된다고 본다(2026-10-16 확인).
 - SDK가 휠로 함께 배포하는 바이너리를 SDK 기반 제품 안에 그대로 넣는 것은 이 문구가 상정하는 사용이다. 다만 **바이너리 재배포를 명시적으로 허락하는 문구는 찾지 못했다.** 사내 사용은 문제 소지가 낮고, 다른 회사에 DMG를 배포하기 전에는 Anthropic(영업·법무)에 확인한다. 안 된다고 하면 첫 실행 때 SDK 공식 경로로 받는 방식으로 바꾼다.
 - 같은 문서의 브랜딩 규칙: 제품을 "Claude Code"로 부르거나 Claude Code처럼 보이게 하면 안 된다("Powered by Claude"는 가능). 앱 이름·화면은 AskProject로 되어 있고, 고지 파일에서 구성 요소 이름으로만 언급한다. 같은 문서는 claude.ai 로그인(구독)을 제3자 제품에 넣는 것도 승인 없이는 허용하지 않는다고 한다. 배포 앱에서 구독 모드를 뺀 결정과 일치한다.
-- ripgrep(MIT/Unlicense), CPython(PSF), 파이썬 의존성의 고지는 `THIRD_PARTY_NOTICES.txt`에 모은다(`scripts/collect-licenses.sh`).
+- ripgrep(MIT/Unlicense), cloudflared(Apache-2.0), CPython(PSF), 파이썬 의존성의 고지는 `THIRD_PARTY_NOTICES.txt`에 모은다(`scripts/collect-licenses.sh`).
 
 ## W0 스파이크 결과 (2026-10-16, 이 맥)
 

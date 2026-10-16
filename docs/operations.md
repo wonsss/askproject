@@ -143,6 +143,31 @@ uv run askproject redact <query_id> --reason "질문에 실명·연락처 포함
 
 콘솔은 여전히 `127.0.0.1:8787`에만 바인딩하고, 맥북의 `cloudflared`가 나가는 연결로 Cloudflare에 붙는다. Cloudflare Access가 터널 앞에서 이메일 인증을 거므로 허용된 사람만 열린다.
 
+**하지 말 것**: `0.0.0.0` 바인딩(같은 네트워크 전체에 감사 로그가 열린다), `cloudflared tunnel --url`(trycloudflare.com 임시 주소 — 주소만 알면 누구나 연다). 콘솔에는 슬랙 질문 원문이 영구 보존되므로, Allow 정책은 운영자 몇 명으로 좁히는 것을 기본으로 한다.
+
+### 배포 앱 설치자용 (설정 → 팀 공유)
+
+터미널 없이 대시보드와 앱 화면만 쓴다. `cloudflared`는 앱에 들어 있다(Cloudflare 서명 유지, `--no-autoupdate`).
+
+1. Cloudflare에 도메인을 연결해 둔다(필수). Zero Trust는 50명까지 무료.
+2. Zero Trust → Networks → Tunnels → **Create a tunnel**(Cloudflared). 설치 명령은 실행하지 않고, `eyJ…` 토큰(또는 명령 전체)을 앱의 **터널 토큰**에 붙여 넣는다.
+3. 같은 터널의 **Public hostname**: `askproject.<도메인>` → 서비스 `HTTP` · `127.0.0.1:8787`.
+4. Access → Applications → **Self-hosted** 앱을 같은 주소로 만들고 Allow 정책에 팀원 이메일을 넣는다. Overview의 **AUD 태그**를 앱에 붙여 넣는다.
+5. 팀 도메인(`<팀>.cloudflareaccess.com`, Zero Trust → Settings)을 넣고 **저장** → **팀 공유 켜기** → **연결 확인**.
+
+| 항목 | 값 |
+| --- | --- |
+| 저장 위치 | 주소·팀 도메인·AUD는 `settings.env`(`config set`), 터널 토큰은 Keychain `ASKPROJECT_CLOUDFLARE_TUNNEL_TOKEN` |
+| 상시 실행 | SMAppService 에이전트 `com.askproject.tunnel`(`askproject tunnel`). 봇 켜기·끄기와 따로 움직이고, 설정이 비면 띄우지 않고 끝난다 |
+| 격리 | 빈 `--config`(데이터 폴더의 `cloudflared.yml`)를 줘서 `~/.cloudflared/config.yml`을 읽지 않는다. 토큰은 인자가 아니라 `TUNNEL_TOKEN` 환경변수(다른 환경변수는 넘기지 않는다 — cloudflared가 시작 로그에 환경변수를 찍고 `TUNNEL_TOKEN`만 가린다) |
+| 연결 확인 | `askproject setup check tunnel`: 빈 항목 → 토큰 형식 → cloudflared → 이 터널의 `/ready` 연결 수(실행마다 빈 포트를 골라 `data/tunnel.json`에 적는다 — 따로 띄운 cloudflared와 섞이지 않게) → Access 팀 키 → 공개 주소가 Access 로그인으로 넘어가는지. 로그인 없이 응답하면(Access 앱 누락) 실패로 알린다 |
+| 로그 | `~/Library/Logs/AskProject/tunnel.log` |
+| 끄기 | 앱에서 **팀 공유 켜기**를 끈다. 완전 철거는 대시보드에서 터널·Access 앱 삭제 |
+
+### 개발 모드 (CLI 방식)
+
+개발 앱은 SMAppService를 쓰지 않으므로 아래처럼 직접 띄운다. 대시보드 토큰 방식을 쓰려면 `.env`에 `ASKPROJECT_CLOUDFLARE_TUNNEL_TOKEN=eyJ…`를 넣고 `uv run askproject tunnel`로 띄워도 된다.
+
 | 항목 | 값 |
 | --- | --- |
 | 공개 주소 | `https://askproject.<내 도메인>` (예: Cloudflare에 등록된 도메인의 서브도메인) |
