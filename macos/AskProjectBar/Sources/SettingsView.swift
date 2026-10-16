@@ -1,4 +1,4 @@
-// 설정 창: 연결(비밀값) · 레포 · 채널 · 팀 공유(웹 콘솔 Cloudflare 터널) · 맥 운영(백업 사본·복구·절전·자동 로그인) · 도메인·용어(보기만) · 정보.
+// 설정 창: 연결(비밀값) · 레포 · 채널 · 팀 공유(웹 콘솔 Cloudflare 터널) · 맥 운영(백업 사본·복구·절전·자동 로그인) · 도메인·용어(학습하기) · 정보.
 // 저장은 모두 `askproject config set --json`(검증·원자적 쓰기, 비밀값은 Keychain).
 
 import AppKit
@@ -566,23 +566,7 @@ struct SettingsView: View {
     }
 
     private var domains: some View {
-        SettingsPage {
-            Text("도메인 맵과 용어 사전은 이번 버전에서 화면 편집을 지원하지 않아요. 기본값으로도 동작하고, 채우면 답의 정확도가 올라가요.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            if let dir = app.paths?.config_dir {
-                ForEach(["domains.yaml", "glossary.yaml"], id: \.self) { f in
-                    GroupBox(f) {
-                        ScrollView {
-                            Text((try? String(contentsOfFile: dir + "/" + f, encoding: .utf8)) ?? "(없음)")
-                                .font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .frame(height: 140)
-                    }
-                }
-                Button("Finder에서 보기") { NSWorkspace.shared.open(URL(fileURLWithPath: dir)) }
-            }
-        }
+        DomainsLearnView(configDir: app.paths?.config_dir)
     }
 
     private var about: some View {
