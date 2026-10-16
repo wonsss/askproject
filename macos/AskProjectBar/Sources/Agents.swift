@@ -25,6 +25,8 @@ enum Agents {
     /// 켠다. 사용자가 로그인 항목에서 허용해야 하면 true(시스템 설정을 연다).
     @discardableResult
     static func enableAll() throws -> Bool {
+        // 등록은 됐는데 bootout된 작업(업데이트 취소·마이그레이션 실패 뒤)은 떠 있지 않다 — 다시 등록해 띄운다
+        resume(names.filter { service($0).status == .enabled })
         for n in names where service(n).status != .enabled {
             try service(n).register()
         }
@@ -102,7 +104,7 @@ enum Agents {
         p.arguments = args
         p.standardOutput = FileHandle.nullDevice
         p.standardError = FileHandle.nullDevice
-        try? p.run()
+        do { try p.run() } catch { return -1 }  // 실행 못 한 Process의 terminationStatus는 예외로 앱을 죽인다
         p.waitUntilExit()
         return p.terminationStatus
     }

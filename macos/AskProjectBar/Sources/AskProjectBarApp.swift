@@ -120,14 +120,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
         let last = UserDefaults.standard.string(forKey: "lastRunBuild")
         guard last != build else { return }
-        UserDefaults.standard.set(build, forKey: "lastRunBuild")
-        guard last != nil else { return }  // 첫 설치
+        guard last != nil else {  // 첫 설치
+            UserDefaults.standard.set(build, forKey: "lastRunBuild")
+            return
+        }
         let r = await Backend.run(["migrate"])
         if !r.ok {
+            // 빌드 번호를 기록하지 않는다 — 다음 실행에서 마이그레이션과 재등록을 다시 시도한다
             AppModel.shared.message = "업데이트 후 데이터 마이그레이션 실패: \(r.errorLine) — 봇을 켜지 않았어요. 진단 묶음을 보내 주세요."
             return
         }
         Agents.reloadEnabled()
+        UserDefaults.standard.set(build, forKey: "lastRunBuild")
     }
 }
 
