@@ -13,7 +13,7 @@ from pathlib import Path
 
 from askproject import paths
 from askproject.config import RepoConfig
-from askproject.indexing.filters import PathFilter, matches
+from askproject.indexing.filters import ALWAYS_BLOCK, PathFilter, matches
 from askproject.store.db import Store
 
 MAX_LINE_CHARS = 240
@@ -72,7 +72,10 @@ class CodeTools:
     def search(self, session: ToolSession, query: str, path_glob: str | None = None, fixed: bool = True) -> str:
         if not query.strip():
             return "검색어가 비어 있습니다."
-        cmd = [paths.rg_path() or "rg", "--line-number", "--no-heading", "--color", "never", "--smart-case",
+        # --no-ignore·--no-config: 대상 레포의 .ignore나 이 맥의 상위 .gitignore·전역 rg 설정이 인덱싱된 파일을 숨기지 않게.
+        # 비밀 파일은 아래 -g 제외와 결과 줄마다의 _check가 막는다.
+        cmd = [paths.rg_path() or "rg", "--hidden", "--no-ignore", "--no-config",
+               "--line-number", "--no-heading", "--color", "never", "--smart-case",
                "--max-count", "5", "--max-columns", str(MAX_LINE_CHARS), "--max-columns-preview"]
         if fixed:
             cmd.append("--fixed-strings")
@@ -82,7 +85,7 @@ class CodeTools:
         elif session.scope_globs and not session.widened:
             for g in session.scope_globs:
                 cmd += ["-g", g]
-        for pattern in (*self.repo.exclude, "**/.env", "**/.env.*"):
+        for pattern in (*self.repo.exclude, *ALWAYS_BLOCK):
             cmd += ["-g", f"!{pattern}"]
         cmd += ["-e", query, "."]
         proc = subprocess.run(cmd, cwd=self.repo_path, capture_output=True, text=True, timeout=30)

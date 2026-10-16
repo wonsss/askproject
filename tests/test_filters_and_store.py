@@ -15,6 +15,14 @@ def test_secret_files_always_blocked():
     assert f.allowed("apps/api/.env.example")
 
 
+def test_include_exceptions_cannot_unblock_secrets():
+    """레포 설정의 예외 글롭이 넓어도 비밀값·키 파일은 풀리지 않는다(.env.example만 예외)."""
+    f = PathFilter((), ("config/**",))
+    for p in ("config/.env", "config/prod.pem", "config/.npmrc", "home/.ssh/id_ed25519", ".aws/credentials"):
+        assert not f.allowed(p), p
+    assert f.allowed("config/app.yaml") and f.allowed("config/.env.example")
+
+
 def test_path_traversal_blocked():
     f = PathFilter(exclude=())
     assert not f.allowed("../etc/passwd")

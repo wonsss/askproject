@@ -29,7 +29,7 @@ import yaml
 from askproject import paths
 from askproject.agent.base import AgentRequest, AgentResponse, AgentRunner, ToolSpec
 from askproject.config import RepoConfig
-from askproject.indexing.filters import PathFilter, matches
+from askproject.indexing.filters import ALWAYS_BLOCK, PathFilter, matches
 from askproject.llm.pricing import estimate_cost
 from askproject.store.db import REDACTED, Store
 from askproject.tools.code_tools import CodeTools, ToolSession
@@ -371,8 +371,8 @@ def make_rg_counter(repo_path: Path, repo: RepoConfig):
         rg = paths.rg_path()
         if not rg:
             return None
-        cmd = [rg, "-l", "--fixed-strings", "--case-sensitive", "--color", "never"]
-        for pattern in (*repo.exclude, "**/.env", "**/.env.*"):
+        cmd = [rg, "--hidden", "--no-ignore", "--no-config", "-l", "--fixed-strings", "--case-sensitive", "--color", "never"]
+        for pattern in (*repo.exclude, *ALWAYS_BLOCK):
             cmd += ["-g", f"!{pattern}"]
         cmd += ["-e", ident, "."]
         try:

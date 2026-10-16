@@ -13,7 +13,21 @@ ALWAYS_BLOCK = (
     "**/*.key",
     "**/*.p8",
     "**/*.p12",
+    "**/*.jks",
+    "**/*.keystore",
+    "**/*.mobileprovision",
     "**/id_rsa*",
+    "**/id_dsa*",
+    "**/id_ecdsa*",
+    "**/id_ed25519*",
+    "**/.npmrc",
+    "**/.pypirc",
+    "**/.netrc",
+    "**/.dev.vars",
+    "**/.aws/**",
+    "**/credentials.json",
+    "**/*service-account*.json",
+    "**/serviceAccountKey.json",
     "**/.git/**",
 )
 ALWAYS_ALLOW = ("**/.env.example",)
@@ -73,6 +87,10 @@ class PathFilter:
             path = path[2:]
         if not path or path.startswith("/") or ".." in path.split("/"):
             return False
+        if matches(path, ALWAYS_ALLOW):
+            return True
+        if matches(path, ALWAYS_BLOCK):
+            return False  # 레포 설정의 include_exceptions로도 비밀값·키 파일을 풀 수 없다
         if matches(path, self.include_exceptions):
             return True
         return not matches(path, self.exclude)
