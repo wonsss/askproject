@@ -6,6 +6,7 @@ Claude API를 쓰지 않는다.
 from __future__ import annotations
 
 import hashlib
+import os
 import shlex
 import shutil
 import sqlite3
@@ -104,6 +105,7 @@ def backup(db_path: Path, dest: Path, keep_days: int = 14, upload_cmd: str | Non
     if check["integrity"] != "ok":
         tmp.unlink(missing_ok=True)
         raise RuntimeError(f"백업 무결성 확인 실패: {check['integrity']}")
+    os.chmod(tmp, 0o600)  # sqlite는 umask(보통 0644)로 만든다 — 감사 로그 사본은 본인만 읽게
     tmp.rename(out)
     digest = _sha256(out)
     out.with_suffix(out.suffix + ".sha256").write_text(f"{digest}  {out.name}\n", encoding="utf-8")
