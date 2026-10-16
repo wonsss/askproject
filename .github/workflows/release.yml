@@ -141,7 +141,8 @@ jobs:
         run: |
           assets=("dist/AskProject-$VERSION.dmg")
           [ -f dist/updates/appcast.xml ] && assets+=(dist/updates/appcast.xml)
-          shasum -a 256 "dist/AskProject-$VERSION.dmg" > "dist/AskProject-$VERSION.dmg.sha256"
+          # 파일 이름만 적는다(받은 폴더에서 shasum -a 256 -c로 바로 검증되게)
+          (cd dist && shasum -a 256 "AskProject-$VERSION.dmg" > "AskProject-$VERSION.dmg.sha256")
           assets+=("dist/AskProject-$VERSION.dmg.sha256")
           gh release create "$TAG" "${assets[@]}" --title "AskProject $VERSION" --generate-notes --verify-tag
           url="$(gh release view "$TAG" --json url -q .url)"
