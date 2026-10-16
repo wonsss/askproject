@@ -440,3 +440,12 @@ def test_bump_version_rules(tmp_path, monkeypatch):
     assert bump.next_version("0.1.9", "2.0.0") == "2.0.0"
     with pytest.raises(SystemExit):
         bump.next_version("0.1.9", "v2")
+
+
+@pytest.mark.parametrize("name,ref", [("..", "main"), (".", "main"), ("svc", "../../x"), ("svc", "a b")])
+def test_repo_config_rejects_unsafe_name_or_ref(name, ref):
+    """'..' 이름이면 동기화가 data 폴더를 옮기고 지울 수 있다. 손으로 고친 repos.yaml도 막는다."""
+    from askproject.config import RepoConfig
+
+    with pytest.raises(ValueError):
+        RepoConfig(name, "https://github.com/x/y", ref)

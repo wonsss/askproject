@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from askproject import keychain, paths
 from askproject.settings import Settings, update_env_file
@@ -123,6 +123,13 @@ class RepoInput(BaseModel):
     url: str
     ref: str = Field(default="main", min_length=1, max_length=200)
     description: str = ""
+
+    @model_validator(mode="after")
+    def _safe_name_ref(self):
+        from askproject.config import RepoConfig
+
+        RepoConfig(self.name, self.url, self.ref)  # '..' 이름·이상한 ref를 같은 규칙으로 거부
+        return self
 
     @field_validator("url")
     @classmethod
