@@ -33,6 +33,9 @@
   <string></string>
   <key>SUEnableAutomaticChecks</key>
   <true/>
+  <!-- 업데이트 확인 때 시스템 정보(기종·OS·CPU 등)를 보내지 않는다 (docs/privacy.md) -->
+  <key>SUEnableSystemProfiling</key>
+  <false/>
   <!-- 개발 빌드(scripts/build-macos-app.sh)만 채운다: AskProject 레포 경로와 uv 경로. 배포 빌드는 지운다 -->
   <key>AskProjectRepo</key>
   <string></string>

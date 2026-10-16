@@ -234,6 +234,7 @@ final class WizardModel: ObservableObject {
 
 struct WizardView: View {
     @StateObject private var m = WizardModel()
+    @AppStorage(Privacy.ackKey) private var privacyAck = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -301,6 +302,9 @@ struct WizardView: View {
             .font(.callout)
             Text("이 맥은 봇이 켜져 있는 동안 잠들지 않게 설정할 수 있어요(설정 → 맥 운영). 다른 맥에 같은 봇을 또 켜면 질문이 나뉘니 한 대만 켜 두세요.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            PrivacySummaryCard()
+            Toggle("데이터가 Anthropic Claude API와 내가 연결한 서비스로만 간다는 것을 이해했어요", isOn: $privacyAck)
+                .toggleStyle(.checkbox).font(.callout)
         }
     }
 
@@ -493,6 +497,7 @@ struct WizardView: View {
         case .claude: return m.apiKeyProblem == nil && (!m.apiKey.isEmpty || m.secretSaved("ANTHROPIC_API_KEY"))
         case .channels: return !m.allowed.isEmpty || m.allowDM
         case .verify: return !m.checks.isEmpty && m.blocking.isEmpty
+        case .welcome: return privacyAck
         default: return true
         }
     }

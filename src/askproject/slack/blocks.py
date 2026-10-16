@@ -62,7 +62,7 @@ def _loc(path: str, start: int, end: int) -> str:
     return f"{short_path(path)}:{start}" + (f"-{end}" if end != start else "")
 
 
-PUBLIC_NOTE = "🌐 질문과 답은 팀 콘솔에 공개돼요."
+PUBLIC_NOTE = "🌐 질문과 답은 팀 콘솔에 공개되고, 질문과 관련 코드는 Claude API(Anthropic)로 처리돼요. 개인정보는 넣지 마세요."
 
 
 def thinking_blocks(text: str = "⏳ 코드를 확인하고 있어요…", public_note: bool = False) -> list[dict]:

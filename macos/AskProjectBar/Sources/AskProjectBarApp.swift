@@ -21,6 +21,12 @@ final class WindowManager {
         wizard = show(wizard, title: "AskProject 설정", view: WizardView())
     }
 
+    private var privacy: NSWindow?
+
+    func showPrivacy() {
+        privacy = show(privacy, title: "데이터와 개인정보", view: PrivacyDetailView())
+    }
+
     func closeWizard() {
         wizard?.close()
     }

@@ -66,8 +66,20 @@ def test_agent_env_overrides_inherited_claude_auth():
     from askproject.agent.claude_runner import ClaudeAgentRunner
 
     env = ClaudeAgentRunner("m", "bot-key", "https://api.anthropic.com")._env()
+    from askproject.agent.claude_runner import QUIET_ENV
+
     assert env == {"ANTHROPIC_API_KEY": "bot-key", "ANTHROPIC_AUTH_TOKEN": "", "ANTHROPIC_BASE_URL": "https://api.anthropic.com",
-                   "DISABLE_AUTOUPDATER": "1"}
+                   **QUIET_ENV}
+
+
+def test_claude_subprocess_sends_no_telemetry():
+    """번들 claude는 기본으로 사용 지표를 Anthropic·제3자 로깅에 보낸다 — 봇은 API 호출 외 통신을 모두 끈다"""
+    from askproject.agent.claude_runner import ClaudeAgentRunner
+    from askproject.llm.claude_cli import cli_env
+
+    for env in (ClaudeAgentRunner("m", "k")._env(), ClaudeAgentRunner("m", None, subscription=True)._env(), cli_env()):
+        assert env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] == "1" and env["DISABLE_TELEMETRY"] == "1"
+        assert env["DISABLE_ERROR_REPORTING"] == "1" and env["DISABLE_FEEDBACK_COMMAND"] == "1"
 
 
 def test_agent_isolated_from_user_claude_config(tmp_path):
@@ -96,3 +108,12 @@ def test_preflight_reports_rejected_key(monkeypatch):
     # .env에 ASKPROJECT_LLM_PROVIDER가 있을 수 있어 이 테스트는 api 모드를 명시한다
     msg = claude_preflight(Settings(ANTHROPIC_API_KEY="bad", llm_provider="api"))
     assert msg and "401" in msg and "bad" not in msg
+
+
+def test_escalation_channel_falls_back_to_host_channel(tmp_path, monkeypatch):
+    from askproject.settings import Settings
+
+    monkeypatch.chdir(tmp_path)
+    assert Settings(host_channel="C_OPS").escalation_channel_id() == "C_OPS"
+    assert Settings(host_channel="C_OPS", escalation_channel="C_DEV").escalation_channel_id() == "C_DEV"
+    assert Settings(host_channel="", escalation_channel="").escalation_channel_id() is None

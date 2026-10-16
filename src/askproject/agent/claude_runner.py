@@ -35,6 +35,16 @@ from askproject.llm.pricing import estimate_cost
 log = logging.getLogger(__name__)
 
 SERVER_NAME = "askproject"
+# claude 하위 프로세스의 부가 통신을 끈다: 사용 지표(Anthropic·제3자 로깅), 오류 보고(제3자 오류 추적), 피드백·설문.
+# 답을 만드는 Claude API 호출 말고는 아무것도 나가지 않게 한다(docs/privacy.md).
+QUIET_ENV = {
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "DISABLE_TELEMETRY": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+    "DISABLE_FEEDBACK_COMMAND": "1",
+    "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "1",
+    "DISABLE_AUTOUPDATER": "1",
+}
 
 
 def _sdk_tool(spec: ToolSpec):
@@ -64,12 +74,12 @@ class ClaudeAgentRunner:
         """하위 프로세스는 부모 환경변수를 물려받는다. 셸의 Claude 인증·주소 대신 봇 설정을 쓰도록 덮어쓴다."""
         if self.subscription:
             # 구독 모드: 하위 claude CLI가 로컬 구독 로그인을 쓰게 한다. 상속된 API 과금 변수는 비운다.
-            env = {k: "" for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL")}
+            env = {k: "" for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL")} | QUIET_ENV
             # 자격 증명 조회는 USER를 쓰는데 launchd의 최소 환경에는 없을 수 있다
             env["USER"] = os.environ.get("USER") or getpass.getuser()
             env["LOGNAME"] = os.environ.get("LOGNAME") or env["USER"]
             return env
-        env: dict[str, str] = {"DISABLE_AUTOUPDATER": "1"}
+        env: dict[str, str] = dict(QUIET_ENV)
         if self.config_dir:
             os.makedirs(self.config_dir, mode=0o700, exist_ok=True)
             env["CLAUDE_CONFIG_DIR"] = self.config_dir

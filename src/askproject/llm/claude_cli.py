@@ -73,6 +73,9 @@ def cli_env() -> dict[str, str]:
     if not env.get("USER"):
         env["USER"] = env.get("LOGNAME") or getpass.getuser()
     env.setdefault("LOGNAME", env["USER"])
+    from askproject.agent.claude_runner import QUIET_ENV
+
+    env.update(QUIET_ENV)  # 사용 지표·오류 보고·피드백 끔(docs/privacy.md)
     return env
 
 
