@@ -1,0 +1,96 @@
+# 배포: v* 태그를 push하면 DMG를 빌드·서명·공증해 GitHub Release에 올린다.
+#   git tag v0.1.1 && git push origin v0.1.1     (pyproject.toml의 version과 같아야 한다)
+# 필요한 Secrets·Variables는 docs/packaging.md의 "릴리스 CI" 절.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write  # Release 만들기
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  dmg:
+    runs-on: macos-15  # arm64 (앱은 arm64 전용)
+    timeout-minutes: 60
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+
+      - name: 태그와 pyproject 버전 확인
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml | head -1)"
+          [ "v$version" = "$TAG" ] || { echo "::error::태그 $TAG ≠ pyproject version $version"; exit 1; }
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: 테스트
+        run: |
+          brew install ripgrep
+          uv sync --frozen
+          uv run pytest -q
+
+      - name: 서명 인증서를 임시 Keychain에 넣기
+        env:
+          CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          echo "$CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          existing=()
+          while IFS= read -r k; do existing+=("$(echo "$k" | xargs)"); done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$KEYCHAIN" "${existing[@]}"
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security find-identity -v -p codesigning "$KEYCHAIN" | grep -q "Developer ID Application" \
+            || { echo "::error::Developer ID Application 인증서가 없습니다"; exit 1; }
+
+      - name: 빌드 · 서명 · 공증 · DMG
+        env:
+          NOTARY_KEY_BASE64: ${{ secrets.NOTARY_API_KEY_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_API_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_API_ISSUER_ID }}
+          SU_FEED_URL: ${{ vars.SU_FEED_URL || format('https://github.com/{0}/releases/latest/download/appcast.xml', github.repository) }}
+          SU_PUBLIC_ED_KEY: ${{ vars.SU_PUBLIC_ED_KEY }}
+        run: |
+          export NOTARY_KEY="$RUNNER_TEMP/AuthKey.p8"
+          echo "$NOTARY_KEY_BASE64" | base64 --decode > "$NOTARY_KEY"
+          [ -n "$SU_PUBLIC_ED_KEY" ] || unset SU_PUBLIC_ED_KEY  # 비면 build-app.sh 기본 공개 키
+          bash scripts/build-dmg.sh
+
+      - name: Sparkle appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          if [ -z "$SPARKLE_PRIVATE_KEY" ]; then echo "SPARKLE_PRIVATE_KEY 없음 — appcast 생략"; exit 0; fi
+          printf '%s' "$SPARKLE_PRIVATE_KEY" > "$RUNNER_TEMP/sparkle.key"
+          SPARKLE_KEY_FILE="$RUNNER_TEMP/sparkle.key" \
+          DOWNLOAD_URL_PREFIX="https://github.com/${{ github.repository }}/releases/download/$TAG/" \
+            bash scripts/make-appcast.sh
+
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          assets=("dist/AskProject-$VERSION.dmg")
+          [ -f dist/updates/appcast.xml ] && assets+=(dist/updates/appcast.xml)
+          shasum -a 256 "dist/AskProject-$VERSION.dmg" > "dist/AskProject-$VERSION.dmg.sha256"
+          assets+=("dist/AskProject-$VERSION.dmg.sha256")
+          gh release create "$TAG" "${assets[@]}" --title "AskProject $VERSION" --generate-notes --verify-tag
+
+      - name: 비밀값 정리
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/sparkle.key" "$RUNNER_TEMP/cert.p12"

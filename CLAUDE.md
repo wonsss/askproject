@@ -34,6 +34,7 @@ uv run askproject paths|config get|status --json      # 앱↔백엔드 계약(J
 uv run askproject setup manifest-url|pat-url|check <slack|github|claude>|repos|channels   # 마법사용
 bash scripts/build-app.sh            # 배포 앱(백엔드 내장 + Developer ID 서명) → dist/AskProject.app
 NOTARY_PROFILE=askproject bash scripts/build-dmg.sh   # 공증 + DMG
+git tag v<버전> && git push origin v<버전>   # CI: .github/workflows/release.yml이 DMG 빌드·공증·Release (Secrets는 docs/packaging.md)
 uv run pytest
 ```
 

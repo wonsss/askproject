@@ -1,0 +1,21 @@
+# 백엔드 테스트: push·PR마다 리눅스에서 pytest. 비밀값·API 비용 없음.
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ripgrep (code_search 도구 테스트에 필요)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ripgrep
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - run: uv run pytest -q

@@ -160,6 +160,37 @@ xcrun notarytool store-credentials askproject --apple-id <Apple ID> --team-id AE
 - 개인 키는 이 맥의 로그인 Keychain에만 있다(`generate_keys`가 저장). **잃으면 이미 배포한 앱에 업데이트를 보낼 수 없다.** `build/cache/Sparkle/bin/generate_keys -x <파일>`로 내보내 안전한 곳(비밀번호 관리자 등)에 보관한다.
 - 업데이트를 켜려면 appcast 공개 주소 `SU_FEED_URL`만 정해 빌드하면 된다. 주소가 없는 빌드는 업데이트 확인을 하지 않는다.
 
+## 릴리스 CI (GitHub Actions)
+
+| 워크플로 | 언제 | 하는 일 |
+|---|---|---|
+| `.github/workflows/test.yml` | main push·PR | 리눅스에서 `uv run pytest` (비밀값·API 비용 없음) |
+| `.github/workflows/release.yml` | `v*` 태그 push | macos-15(arm64)에서 테스트 → 임시 Keychain에 인증서 → `build-dmg.sh`(API 키로 공증) → appcast 서명 → GitHub Release에 DMG·`.sha256`·`appcast.xml` 첨부 → 비밀값 정리 |
+
+릴리스 순서: `pyproject.toml`의 `version`을 올려 커밋 → `git tag v<버전>` → `git push origin v<버전>`. 태그와 version이 다르면 실패한다. 빌드 번호(CFBundleVersion)는 날짜·시각이라 늘 커진다(Sparkle 비교 기준).
+
+### 등록할 Secrets (Settings → Secrets and variables → Actions)
+
+| 이름 | 값 | 만드는 법 |
+|---|---|---|
+| `MACOS_CERT_P12_BASE64` | Developer ID Application 인증서+개인 키 `.p12`의 base64 | 키체인 접근 → 로그인 → 내 인증서 → "Developer ID Application: …" 우클릭 → 내보내기(.p12, 암호 지정) → `base64 -i cert.p12 \| pbcopy`. 다 쓴 `.p12`는 지운다 |
+| `MACOS_CERT_PASSWORD` | 위 `.p12` 암호 | |
+| `NOTARY_API_KEY_BASE64` | App Store Connect API 키 `.p8`의 base64 | [App Store Connect](https://appstoreconnect.apple.com/access/integrations/api) → 사용자 및 액세스 → 통합 → 팀 키 생성(역할 Developer) → `AuthKey_<ID>.p8` 내려받기(한 번만 가능) → `base64 -i AuthKey_<ID>.p8 \| pbcopy` |
+| `NOTARY_API_KEY_ID` | 키 ID (10자) | 같은 화면 |
+| `NOTARY_API_ISSUER_ID` | Issuer ID (UUID) | 같은 화면 위쪽 |
+| `SPARKLE_PRIVATE_KEY` | Sparkle 개인 키 문자열 | `build/cache/Sparkle/bin/generate_keys -x sparkle.key` → 파일 내용. 없으면 appcast 단계만 건너뛴다 |
+
+CLI로 넣을 때는 값을 프롬프트에 붙여넣는다(명령 인자로 넘기면 셸 기록에 남는다): `gh secret set MACOS_CERT_PASSWORD`. 파일은 `gh secret set MACOS_CERT_P12_BASE64 < <(base64 -i cert.p12)`.
+
+### Variables (선택)
+
+| 이름 | 기본값 | 바꿀 때 |
+|---|---|---|
+| `SU_FEED_URL` | `https://github.com/<레포>/releases/latest/download/appcast.xml` | 레포가 **비공개**면 Release 파일은 인증이 있어야 받을 수 있어 Sparkle이 못 읽는다. 공개 레포로 두거나, R2·S3 같은 공개 위치 주소로 바꾸고 그곳에 appcast·DMG를 올린다(워크플로는 올리지 않음) |
+| `SU_PUBLIC_ED_KEY` | `build-app.sh`의 공개 키 | Sparkle 키를 새로 만들었을 때 |
+
+공개 키·피드 주소는 앱에 들어가므로 Secret이 아니라 Variable이다. 인증서·API 키·Sparkle 개인 키가 새면 각각 Apple Developer에서 인증서 폐기, App Store Connect에서 키 폐기, Sparkle 키 교체(이미 배포한 앱은 새 키를 모르므로 수동 재설치 필요)로 대응한다.
+
 ## 클린 맥 검증 절차
 
 개발 도구가 없는 맥에서 비개발자 경로를 처음부터 끝까지 확인한다. 새 macOS 사용자 계정(시스템 설정 → 사용자 및 그룹)이나 macOS VM(UTM 등)에서 한다. 이 맥의 개발자 계정에서는 Homebrew·uv·Keychain 항목 때문에 확인이 안 된다.
