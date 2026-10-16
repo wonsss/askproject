@@ -1,7 +1,8 @@
 #!/bin/bash
 # 배포용 AskProject.app 조립: SwiftUI 앱 + 런처 + launchd 에이전트 plist + 내장 백엔드 → 서명.
 #   bash scripts/build-app.sh                 # dist/AskProject.app (Developer ID 서명)
-#   SIGN=0 bash scripts/build-app.sh          # 서명 생략(ad-hoc) — 이 맥에서 빠르게 확인할 때
+#   SIGN=0 bash scripts/build-app.sh          # 서명 생략(ad-hoc) → dist/unsigned/AskProject.app — 이 맥·CI에서 빠르게 확인할 때
+#                                             # (서명 앱 dist/AskProject.app을 덮어쓰지 않게 폴더를 나눈다)
 #   REBUILD_BACKEND=1 bash scripts/build-app.sh
 # 개발용(uv run으로 레포를 부르는) 앱은 scripts/build-macos-app.sh.
 set -euo pipefail
@@ -9,7 +10,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$REPO_ROOT/macos/AskProjectBar"
 BACKEND="$REPO_ROOT/build/backend"
-APP="$REPO_ROOT/dist/AskProject.app"
+if [ "${SIGN:-1}" = "1" ]; then APP="$REPO_ROOT/dist/AskProject.app"; else APP="$REPO_ROOT/dist/unsigned/AskProject.app"; fi
 VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' "$REPO_ROOT/pyproject.toml" | head -1)"
 BUILD_NO="${BUILD_NO:-$(date '+%Y%m%d%H%M')}"
 SPARKLE="$REPO_ROOT/build/cache/Sparkle"
@@ -49,6 +50,7 @@ if [ "${SIGN:-1}" = "1" ]; then
   bash "$REPO_ROOT/scripts/sign-app.sh" "$APP"
 else
   codesign --force --deep --sign - "$APP" >/dev/null
+  bash "$REPO_ROOT/scripts/check-vendor-signatures.sh" "$APP"  # --deep이 내장 바이너리 서명을 덮지 않았는지
   echo "ad-hoc 서명 (배포 불가)"
 fi
 echo "앱: $APP ($(du -sh "$APP" | cut -f1)) · v$VERSION ($BUILD_NO)"

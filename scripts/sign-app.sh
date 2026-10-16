@@ -16,19 +16,8 @@ CFD_REL="Contents/Resources/backend/bin/cloudflared"
 
 sign() { codesign --force --timestamp --options runtime --sign "$SIGN_ID" "$@"; }
 
-# claude: 우리가 서명하지 않는다. Anthropic Developer ID 서명인지 확인만
-codesign --verify --strict "$APP/$CLAUDE_REL"
-claude_sig="$(codesign -dvv "$APP/$CLAUDE_REL" 2>&1)"
-case "$claude_sig" in
-  *"Authority=Developer ID Application: Anthropic PBC"*"TeamIdentifier=Q6L2SF6YDW"*) ;;
-  *) echo "claude 바이너리 서명이 Anthropic Developer ID가 아닙니다"; exit 1 ;;
-esac
-
-codesign --verify --strict "$APP/$CFD_REL"
-case "$(codesign -dvv "$APP/$CFD_REL" 2>&1)" in
-  *"Authority=Developer ID Application: Cloudflare Inc."*"TeamIdentifier=68WVV388M8"*) ;;
-  *) echo "cloudflared 서명이 Cloudflare Developer ID가 아닙니다"; exit 1 ;;
-esac
+# claude·cloudflared: 우리가 서명하지 않는다. 원래 회사의 Developer ID 서명인지 확인만
+bash "$HERE/check-vendor-signatures.sh" "$APP"
 
 # 1) 백엔드 라이브러리·실행 파일 (claude·cloudflared 제외). 확장자가 없는 Mach-O도 file로 찾는다
 find "$APP/Contents/Resources/backend" -type f \( -name '*.so' -o -name '*.dylib' -o -perm -u+x \) \

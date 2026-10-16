@@ -37,6 +37,7 @@ AskProject.app/Contents/
 ```bash
 bash scripts/build-backend-bundle.sh          # build/backend (PBS + 의존성 + rg), 약 380MB
 bash scripts/build-app.sh                     # dist/AskProject.app 조립 + Developer ID 서명
+SIGN=0 bash scripts/build-app.sh              # 서명 없이(ad-hoc) dist/unsigned/AskProject.app — 서명 앱을 덮어쓰지 않는다
 NOTARY_PROFILE=askproject bash scripts/build-dmg.sh   # 공증 + 스테이플 + DMG
 ```
 
