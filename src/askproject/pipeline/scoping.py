@@ -95,13 +95,22 @@ class DomainMap:
         return "\n".join(lines)
 
 
+def parse_domain_map(raw: dict | None, glossary: dict | None) -> DomainMap:
+    """학습이 붙이는 필드(evidence·locked)는 무시한다. 비었거나 None인 목록도 견딘다."""
+    raw = raw if isinstance(raw, dict) else {}
+    domains = [Domain(str(d["id"]), str(d.get("name") or d["id"]), d.get("summary") or "",
+                      tuple(d.get("terms") or []), tuple(d.get("paths") or []))
+               for d in raw.get("domains") or [] if isinstance(d, dict) and d.get("id")]
+    gloss = {str(k): (list(v) if isinstance(v, (list, tuple)) else [str(v)])
+             for k, v in (glossary if isinstance(glossary, dict) else {}).items() if v is not None}
+    return DomainMap(domains, tuple(raw.get("shared") or []), gloss)
+
+
 def load_domain_map(config_dir: Path) -> DomainMap:
     raw = yaml.safe_load((config_dir / "domains.yaml").read_text(encoding="utf-8"))
-    domains = [Domain(d["id"], d["name"], d.get("summary", ""), tuple(d.get("terms", [])), tuple(d.get("paths", [])))
-               for d in raw["domains"]]
     gpath = config_dir / "glossary.yaml"
     glossary = yaml.safe_load(gpath.read_text(encoding="utf-8")) if gpath.exists() else {}
-    return DomainMap(domains, tuple(raw.get("shared", [])), glossary or {})
+    return parse_domain_map(raw, glossary)
 
 
 @dataclass

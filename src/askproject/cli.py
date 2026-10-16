@@ -23,6 +23,8 @@
   askproject diagnostics [--out 파일.zip]       비밀값을 가린 진단 묶음 (지원 요청 첨부용)
   askproject setup manifest-url|pat-url|check <slack|github|claude>|repos|channels   첫 실행 마법사용 (JSON)
   askproject migrate                          DB 스키마·설정 형식 올리기 (백업 후, 다운그레이드 거부)
+  askproject learn domains|glossary [--dry-run] [--json]   도메인 맵·용어 사전 AI 초안 + 검증 (적용은 따로)
+  askproject learn domains|glossary --apply <제안 id|-> [--accept a,b]   승인한 항목만 적용 (-는 표준 입력 JSON)
 """
 
 from __future__ import annotations
@@ -540,6 +542,94 @@ def cmd_host(action: str, port: int, job: str = "bot") -> None:
 
 
 
+def _learner(c):
+    from askproject.learn import Learner, Workspace
+
+    s = c.settings
+    return Learner(c.store, c.repo, c.sync.path_for(c.repo), c.service.runner, c.service.code_tools,
+                   Workspace(s.config_dir, s.data_dir, s.backup_dir), model=s.model_large,
+                   structure_tools=c.service.structure_tools, doc_tools=c.service.doc_tools,
+                   effort=s.agent_effort_large or None, provider=s.llm_provider)
+
+
+ACTION_MARK = {"add": "+", "change": "~", "remove": "-", "locked": "🔒", "same": "="}
+
+
+def _print_proposal(p: dict) -> None:
+    print(f"제안 {p['id']} · {p['kind']} · 비용 ${p['cost_usd']:.3f} ({p['num_turns']}회, {p['model']})")
+    for i in p["items"]:
+        if i["action"] == "same":
+            continue
+        after = i["after"] if i["after"] is not None else i["before"]
+        label = after.get("name", "") if isinstance(after, dict) else ", ".join(after or [])
+        print(f"  {ACTION_MARK[i['action']]} {i['key']}  {label}" + (f"  ({i['locked_reason']})" if i["locked_reason"] else ""))
+        for w in i["warnings"]:
+            print(f"      ⚠ {w}")
+    for r in p["rejected"]:
+        print(f"  ✗ {r['key']}  버림: {r['reason']}")
+    cov = p.get("coverage")
+    if cov:
+        print(f"  미분류 파일 비율 {cov['before']['uncovered_ratio']:.0%} → {cov['after']['uncovered_ratio']:.0%} (모두 적용 시)")
+    print(f"적용: askproject learn {p['kind']} --apply {p['id']} [--accept 키1,키2]  (생략하면 + ~ 항목)")
+
+
+def cmd_learn(kind: str, dry_run: bool, apply_ref: str | None, accept: str | None, as_json: bool, yes: bool) -> None:
+    from askproject.learn import LearnError, Workspace, apply
+
+    def fail(msg: str) -> None:
+        print(json.dumps({"ok": False, "error": msg}, ensure_ascii=False) if as_json else f"실패: {msg}")
+        sys.exit(2)
+
+    try:
+        if apply_ref:
+            from askproject.settings import Settings
+
+            s = Settings()
+            keys = [k for k in accept.split(",") if k] if accept is not None else None
+            if apply_ref == "-":
+                body = json.loads(sys.stdin.read() or "{}")
+                apply_ref, keys = body.get("proposal_id", ""), body.get("accept")
+            out = apply(Workspace(s.config_dir, s.data_dir, s.backup_dir), apply_ref, keys)
+            if out.get("kind") != kind:
+                fail(f"이 제안은 {out.get('kind')} 제안이에요.")
+            if as_json:
+                print(json.dumps(out, ensure_ascii=False))
+            else:
+                print(f"적용 {len(out['applied'])}개 · 건너뜀 {len(out['skipped'])}개 · 백업 {out['backup'] or '-'}")
+                for sk in out["skipped"]:
+                    print(f"  - {sk['key']}: {sk['reason']}")
+                if out["restart_needed"]:
+                    print("봇을 다시 시작하면 반영돼요.")
+            return
+        c = build_container()
+        learner = _learner(c)
+        plan = learner.plan(kind)
+        if dry_run or not plan["ready"]:
+            if as_json:
+                print(json.dumps(plan, ensure_ascii=False))
+            else:
+                print(f"{kind} 학습 예상 비용 약 ${plan['estimate_usd']:.2f} (최대 ${plan['max_usd']:.2f}, {plan['model']}) · "
+                      f"재료 {plan['materials']}")
+                if plan["reason"]:
+                    print(plan["reason"])
+                if plan["relearn_hint"]:
+                    print(plan["relearn_hint"])
+            if not plan["ready"] and not dry_run:
+                sys.exit(2)
+            return
+        if not as_json:
+            print(f"예상 비용 약 ${plan['estimate_usd']:.2f} (최대 ${plan['max_usd']:.2f}, {plan['model']})")
+            if not yes:
+                if not sys.stdin.isatty() or input("계속할까요? [y/N] ").strip().lower() != "y":
+                    sys.exit("취소했어요. (확인 없이 실행하려면 --yes)")
+        proposal = asyncio.run(learner.propose(kind))
+        print(json.dumps(proposal, ensure_ascii=False)) if as_json else _print_proposal(proposal)
+    except LearnError as exc:
+        fail(str(exc))
+    except (ValueError, FileNotFoundError) as exc:
+        fail(f"{type(exc).__name__}: {exc}")
+
+
 def _prepare(cmd: str) -> None:
     """로그·폴더 준비. 앱 모드에서 launchd 작업(ASKPROJECT_JOB)으로 돌면 ~/Library/Logs로 보낸다."""
     import os
@@ -593,6 +683,13 @@ def main() -> None:
     cf = sub.add_parser("config", help="설정 조회·변경 (앱용 JSON, 변경은 표준 입력)")
     cf.add_argument("action", choices=["get", "set"])
     cf.add_argument("--json", action="store_true")
+    ln = sub.add_parser("learn", help="도메인 맵·용어 사전 학습: AI 초안 → 검증 → 항목별 승인 → 적용")
+    ln.add_argument("kind", choices=["domains", "glossary"])
+    ln.add_argument("--dry-run", action="store_true", help="API 호출 없이 재료·예상 비용만")
+    ln.add_argument("--apply", metavar="ID|-", help="제안 적용 (-면 표준 입력 {\"proposal_id\", \"accept\": [...]})")
+    ln.add_argument("--accept", help="--apply ID와 함께: 적용할 항목 키(쉼표). 생략하면 추가·변경 항목")
+    ln.add_argument("--yes", action="store_true", help="비용 확인 없이 실행")
+    ln.add_argument("--json", action="store_true")
     sub.add_parser("migrate", help="DB 스키마·설정 형식 올리기 (백업 후, 다운그레이드 거부)")
     dg = sub.add_parser("diagnostics", help="비밀값을 가린 진단 묶음 zip")
     dg.add_argument("--out")
@@ -693,6 +790,8 @@ def main() -> None:
         cmd_config(args.action)
     elif args.cmd == "migrate":
         cmd_migrate()
+    elif args.cmd == "learn":
+        cmd_learn(args.kind, args.dry_run, args.apply, args.accept, args.json, args.yes)
     elif args.cmd == "diagnostics":
         cmd_diagnostics(args.out)
 
