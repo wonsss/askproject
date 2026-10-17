@@ -655,6 +655,14 @@ def _prepare(cmd: str) -> None:
     job = os.environ.get("ASKPROJECT_JOB")
     if not paths.app_mode():
         logs.setup(None, None)
+        from askproject.settings import Settings
+
+        try:
+            made = paths.ensure_config_files(Settings().config_dir)
+        except (ValueError, OSError):
+            made = []  # 설정을 못 읽으면 각 명령이 원인을 알린다
+        if made:
+            print(f"설정 템플릿을 만들었어요: config/{', config/'.join(made)} (git 제외 — config/README.md)", file=sys.stderr)
         return
     from askproject.settings import Settings
 

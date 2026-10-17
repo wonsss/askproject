@@ -74,7 +74,7 @@ AskProject에는 **개발자가 운영하는 서버가 없고, 텔레메트리·
 git clone https://github.com/wonsss/askproject && cd askproject
 uv sync
 cp .env.example .env                    # 슬랙·GitHub·Claude 값 채우기
-# config/repos.yaml에 대상 레포 등록 (템플릿 주석 참고)
+# config/repos.yaml에 대상 레포 등록 (첫 명령 때 템플릿이 생긴다. git 제외 — config/README.md)
 uv run askproject doctor --online       # 환경·키·크레딧·노션·DB·백업 점검
 uv run askproject sync                  # 레포 받기(GitHub API) + 인덱싱 + 노션·슬랙 수집 (Claude 비용 없음)
 uv run askproject serve                 # 슬랙 봇
@@ -163,6 +163,7 @@ uv run pytest
 | `config/repos.yaml` | 대상 레포, 기준 ref, 제외 규칙, 레포별 `structure:` 구조 맵 규칙 |
 | `config/domains.yaml` | 기획자 관점 도메인 목록과 도메인별 허용 경로. 직접 쓰거나 `askproject learn domains`(앱: 설정 → 도메인·용어 → 학습하기)로 초안을 받아 항목별로 적용 |
 | `config/glossary.yaml` | 기획 용어 → 코드 식별자 힌트. `askproject learn glossary`로도 채운다 |
+| `config/*.yaml` 공통 | 서비스 정보가 들어가 **git에 넣지 않는다**(.gitignore). 템플릿은 `src/askproject/defaults/`, 없으면 실행할 때 복사 |
 | `eval/golden.yaml` | 골든 세트 (정답·근거·기대 행동. 형식은 `eval/golden.example.yaml`, git 제외) |
 | `ASKPROJECT_MODEL_LARGE` / `_SMALL` | 기본 `claude-sonnet-5-5` / `claude-haiku-5-5` |
 | `ASKPROJECT_AGENT_EFFORT_LARGE` / `_SMALL` | 비우면 모델 기본값 |

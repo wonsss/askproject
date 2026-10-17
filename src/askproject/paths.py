@@ -88,11 +88,26 @@ def ensure_app_dirs(settings) -> None:
     for d in (settings.config_dir, settings.data_dir, settings.cache_dir, settings.backup_dir, settings.log_dir):
         d.mkdir(parents=True, exist_ok=True)
         os.chmod(d, 0o700)
+    ensure_config_files(settings.config_dir)
+
+
+CONFIG_FILES = ("repos.yaml", "domains.yaml", "glossary.yaml")
+
+
+def ensure_config_files(config_dir: Path) -> list[str]:
+    """없는 설정 파일만 빈 템플릿(defaults/)으로 둔다. 있는 파일은 건드리지 않는다.
+
+    config/*.yaml은 서비스 정보가 들어가 git에 넣지 않으므로(.gitignore), 새 클론·worktree에는 없다.
+    """
     defaults = Path(__file__).parent / "defaults"
-    for name in ("repos.yaml", "domains.yaml", "glossary.yaml"):
-        target = settings.config_dir / name
+    config_dir.mkdir(parents=True, exist_ok=True)
+    made = []
+    for name in CONFIG_FILES:
+        target = config_dir / name
         if not target.exists():
             shutil.copyfile(defaults / name, target)
+            made.append(name)
+    return made
 
 
 def atomic_write(path: Path, text: str, mode: int = 0o600) -> None:

@@ -45,7 +45,10 @@ def test_golden_expected_domains_exist():
     golden_path = root / "eval/golden.yaml"
     if not golden_path.exists():
         pytest.skip("eval/golden.yaml이 없습니다 (골든 세트 미구성)")
-    ids = {d["id"] for d in yaml.safe_load((root / "config/domains.yaml").read_text(encoding="utf-8"))["domains"]}
+    domains_path = root / "config/domains.yaml"  # 서비스마다 채우는 파일이라 git에 없다
+    if not domains_path.exists():
+        pytest.skip("config/domains.yaml이 없습니다")
+    ids = {d["id"] for d in yaml.safe_load(domains_path.read_text(encoding="utf-8"))["domains"] or []}
     for item in yaml.safe_load(golden_path.read_text(encoding="utf-8")):
         assert set(item.get("expected_domains") or []) <= ids, item["id"]
 

@@ -60,13 +60,13 @@ uv run pytest
 - `console/` 웹 콘솔(Starlette, 감사 로그 읽기 전용 연결, 최신성은 `commit_files` 해시 비교, Host 검증 + 실행당 토큰, 공개 호스트는 Cloudflare Access JWT)
 - `slack/heartbeat.py` 워크스페이스 호스트 1대 감지(운영 채널 메시지 metadata)
 - `macos/` 앱(SwiftUI, 파일을 직접 쓰지 않고 CLI JSON만 부름) · `launcher/`(C 런처) · `LaunchAgents/`(SMAppService plist) · `entitlements/`
-- `config/` repos.yaml · domains.yaml · glossary.yaml · `eval/golden.yaml`(형식은 `eval/golden.example.yaml`)
+- `config/` repos.yaml · domains.yaml · glossary.yaml (git 제외, 템플릿은 `src/askproject/defaults/`) · `eval/golden.yaml`(형식은 `eval/golden.example.yaml`)
 
 ## 지켜야 할 것
 
 - 봇은 모든 소스에 **읽기 전용**이다. 에이전트에 쓰기·셸·외부 전송 도구를 추가하지 않는다.
 - `.env`, `secrets/`, `data/`는 커밋하지 않는다(.gitignore). 비밀값을 출력·로그·커밋 메시지에 남기지 않는다.
-- 이 레포는 공개해도 되는 범용 코드만 담는다. 대상 레포는 **비공개**일 수 있으므로, 그 내부 정보(채운 `config/*.yaml`, `eval/golden.yaml`, 실제 답변 스크린샷·코드 경로·커밋 해시·서비스 이름)는 커밋하지 않는다. `config/*.yaml`은 빈 템플릿만 커밋하고, 문서·테스트 예시는 가상의 서비스(주문·알림 등)로 쓴다.
+- 이 레포는 공개해도 되는 범용 코드만 담는다. 대상 레포는 **비공개**일 수 있으므로, 그 내부 정보(채운 `config/*.yaml`, `eval/golden.yaml`, 실제 답변 스크린샷·코드 경로·커밋 해시·서비스 이름)는 커밋하지 않는다. `config/*.yaml`은 git에서 뺐다(.gitignore) — 템플릿은 `src/askproject/defaults/`에 두고, 없으면 실행할 때 복사된다(`paths.ensure_config_files`). 템플릿을 고칠 때는 defaults 쪽을 고친다. 문서·테스트 예시는 가상의 서비스(주문·알림 등)로 쓴다.
 - 커밋은 작업 단위로 나누고, 파일 경로를 명시해 스테이징한다(`git add -A` 금지). push는 사용자 확인 후에만.
 - 골든 세트 정답을 쓸 때는 대상 레포 코드를 직접 읽어 근거 라인을 확인한다.
 

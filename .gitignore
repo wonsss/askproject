@@ -22,3 +22,6 @@ eval/golden.yaml
 # Claude Code 작업 폴더(워크트리·개인 설정)
 .claude/worktrees/
 .claude/settings.local.json
+
+# 서비스마다 채우는 설정(비공개 레포 정보). 템플릿은 src/askproject/defaults/, 없으면 실행할 때 복사된다
+config/*.yaml

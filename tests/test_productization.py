@@ -451,3 +451,25 @@ def test_repo_config_rejects_unsafe_name_or_ref(name, ref):
 
     with pytest.raises(ValueError):
         RepoConfig(name, "https://github.com/x/y", ref)
+
+
+def test_dev_mode_copies_missing_config_templates_without_touching_existing(tmp_path):
+    cfg = tmp_path / "config"
+    cfg.mkdir()
+    (cfg / "repos.yaml").write_text("repos: [{name: mine, url: https://github.com/o/r}]\n", encoding="utf-8")
+    made = paths.ensure_config_files(cfg)
+    assert made == ["domains.yaml", "glossary.yaml"]
+    assert "mine" in (cfg / "repos.yaml").read_text(encoding="utf-8")  # 채운 파일은 그대로
+    assert (cfg / "domains.yaml").read_text(encoding="utf-8") == \
+        (paths.Path(paths.__file__).parent / "defaults/domains.yaml").read_text(encoding="utf-8")
+    assert paths.ensure_config_files(cfg) == []
+
+
+def test_filled_config_files_are_not_tracked_by_git():
+    import subprocess
+
+    root = paths.Path(__file__).parents[1]
+    tracked = subprocess.run(["git", "ls-files", "config"], cwd=root, capture_output=True, text=True).stdout.split()
+    assert not [f for f in tracked if f.endswith(".yaml")], tracked
+    ignored = subprocess.run(["git", "check-ignore", "config/domains.yaml"], cwd=root, capture_output=True, text=True)
+    assert ignored.returncode == 0
