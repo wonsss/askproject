@@ -180,12 +180,35 @@ xcrun notarytool store-credentials askproject --apple-id <Apple ID> --team-id AE
 | **GitHub 버튼** (가장 쉬움) | Actions → release → Run workflow → `patch`(기본)·`minor`·`major` 또는 `1.2.3` → Run | 터미널 없이. 봇이 버전을 올려 main에 커밋하고 태그를 붙인 뒤 빌드한다 |
 | **터미널 한 줄** | `make release` (patch) · `make release-minor` · `make release-major` · `make release V=1.2.3` | 이 맥에서. 변경 내용을 보여 주고 확인을 받은 뒤 커밋·태그·push(`-y`면 묻지 않음) |
 | 직접 태그 | 버전을 맞춰 커밋한 뒤 `git tag v1.2.3 && git push origin v1.2.3` | 이미 버전을 올려 둔 경우 |
+| **이 맥에서 (Actions 없이)** | `make release-local` (V=minor·major·1.2.3) · 태그만 올라갔으면 `make release-local-current` | Actions가 결제·장애로 안 돌 때. 아래 절 |
 
 - 버전은 네 곳(pyproject·`__version__`·uv.lock·개발 앱 Info.plist)에 적혀 있다. `scripts/bump_version.py`가 한 번에 맞추고, 테스트가 어긋나면 실패시킨다. 손으로 고치지 않는다.
 - 자동으로 막는 것: 태그와 코드 버전이 다름, 태그 커밋이 main에 없음, 같은 버전의 태그·Release가 이미 있음, 버전을 낮춤, 릴리스 두 개가 동시에 돎.
 - **main 보호 규칙**을 켜 두면 버튼 실행의 봇 커밋 push가 막힐 수 있다. 그때는 규칙에 github-actions 우회를 허용하거나 터미널 방식을 쓴다.
 - 실패하면 Actions 실행 화면 요약에 원인 한 줄이 남는다. 공증 실패는 로그에 Apple의 상세 사유(JSON)가 찍힌다. 버튼 실행이 빌드 단계에서 실패하면 버전 커밋·태그는 이미 올라가 있으므로, 고친 뒤 그 태그를 지우고(`git push origin :refs/tags/v1.2.3`) 다시 돌리거나 다음 patch로 낸다.
 - 빌드 번호(CFBundleVersion)는 날짜·시각이라 늘 커진다(Sparkle 비교 기준).
+
+### 이 맥에서 릴리스 (Actions 없이)
+
+`scripts/release-local.sh`가 release.yml과 같은 일을 이 맥의 Keychain 자격 증명으로 한다. Secrets는 쓰지 않는다.
+
+| 명령 | 하는 일 |
+|---|---|
+| `make release-check` | 점검만: main·변경 없음, `gh` 로그인, Developer ID 인증서, 공증 프로필, Keychain의 Sparkle 개인 키가 앱의 공개 키와 같은지, ripgrep, 테스트 |
+| `make release-local` | 점검 → `release.sh`(버전 올리기·커밋·태그·push) → `build-dmg.sh`(빌드·서명·공증·스테이플) → `make-appcast.sh`(이번 DMG만) → `.sha256` → `gh release create --generate-notes --verify-tag` → 받아서 해시 비교 |
+| `make release-local-current` | 버전 올리기 없이, HEAD의 태그 버전으로 빌드부터 (태그는 push됐는데 CI가 실패한 경우) |
+
+처음 한 번 준비:
+
+1. Developer ID Application 인증서를 로그인 Keychain에 둔다(Xcode → Settings → Accounts, 또는 developer.apple.com에서 받아 더블클릭).
+2. 공증 프로필: `xcrun notarytool store-credentials askproject --apple-id <Apple ID> --team-id <팀 ID>` (앱 암호는 직접 입력). 다른 이름이면 `NOTARY_PROFILE=<이름> make release-local`.
+3. Sparkle 개인 키가 이 맥의 Keychain에 있어야 한다(아래 'Sparkle 키'). 없거나 앱의 공개 키와 다르면 점검이 멈춘다 — 다른 키로 서명하면 설치된 앱이 업데이트를 거부한다.
+4. `gh auth login` (Release 업로드).
+
+주의:
+- Actions가 살아 있을 때 `make release-local`을 쓰면 태그 push로 CI도 함께 돈다. 먼저 끝난 쪽이 Release를 만들고 다른 쪽은 'Release가 이미 있음'으로 멈춘다. 평소엔 `make release`를 쓴다.
+- `dist/updates`는 매번 지우고 이번 DMG만 넣는다. 이 맥에 남은 옛 DMG가 appcast에 섞여 Release에 없는 파일을 가리키지 않게 하기 위해서다.
+- 레포가 비공개면 Release 파일은 인증 없이 받을 수 없어 Sparkle 자동 업데이트가 동작하지 않는다(위 `SU_FEED_URL`). 스크립트가 끝에 경고한다.
 
 ### 등록할 Secrets (Settings → Secrets and variables → Actions)
 

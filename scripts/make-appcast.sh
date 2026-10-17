@@ -11,7 +11,8 @@ SPARKLE="$REPO_ROOT/build/cache/Sparkle"
 UPDATES="$REPO_ROOT/dist/updates"
 bash "$REPO_ROOT/scripts/fetch-sparkle.sh" "$SPARKLE"
 mkdir -p "$UPDATES"
-cp "$REPO_ROOT"/dist/AskProject-*.dmg "$UPDATES/"
+# DMG=dist/AskProject-1.2.3.dmg를 주면 그 파일만 넣는다(이 맥에 남은 옛 빌드가 appcast에 섞이지 않게)
+if [ -n "${DMG:-}" ]; then cp "$DMG" "$UPDATES/"; else cp "$REPO_ROOT"/dist/AskProject-*.dmg "$UPDATES/"; fi
 args=()
 [ -n "${SPARKLE_KEY_FILE:-}" ] && args+=(--ed-key-file "$SPARKLE_KEY_FILE")
 [ -n "${DOWNLOAD_URL_PREFIX:-}" ] && args+=(--download-url-prefix "$DOWNLOAD_URL_PREFIX")

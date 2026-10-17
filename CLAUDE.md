@@ -42,6 +42,7 @@ uv run askproject setup manifest-url|pat-url|check <slack|github|claude>|repos|c
 bash scripts/build-app.sh            # 배포 앱(백엔드 내장 + Developer ID 서명) → dist/AskProject.app (SIGN=0이면 dist/unsigned/)
 NOTARY_PROFILE=askproject bash scripts/build-dmg.sh   # 공증 + DMG
 make release [V=1.2.3] · make release-minor · make release-major   # 버전 올리기·커밋·태그·push → CI가 DMG 빌드·공증·Release (GitHub Actions 'Run workflow' 버튼도 같음, Secrets는 docs/packaging.md)
+make release-check · make release-local [V=…] · make release-local-current   # Actions 없이 이 맥에서 릴리스(Keychain 인증서·공증 프로필·Sparkle 키, docs/packaging.md)
 python3 scripts/bump_version.py --check            # 버전 네 곳 일치 확인 (손으로 고치지 않는다)
 uv run pytest
 ```

@@ -246,6 +246,29 @@ bash scripts/build-app.sh           # 배포 앱: 백엔드 내장 + Developer I
 | [learn.md](docs/learn.md) | 도메인 맵·용어 사전 학습: 초안·검증·잠금·적용, 학습 전후 eval 비교 |
 | [wireframe.md](docs/wireframe.md) · [flowchart.md](docs/flowchart.md) | 와이어프레임·변경안 목업, 로직 흐름도 |
 
+## 릴리스
+
+버전을 올리고 서명·공증한 DMG를 GitHub Release에 올리는 방법은 두 가지입니다.
+
+| 방법 | 명령 | 언제 |
+| --- | --- | --- |
+| GitHub Actions | `make release` (또는 Actions → release → Run workflow) | 평소. 태그를 push하면 CI가 빌드·공증·Release까지 한다 |
+| **이 맥에서 직접** | `make release-local` | Actions가 결제·장애로 안 돌 때. CI와 같은 일을 이 맥에서 한다 |
+
+이 맥에서 직접 하는 순서:
+
+```bash
+make release-check            # 1. 준비 점검만 (아무것도 바꾸지 않음)
+make release-local            # 2. patch 릴리스 (0.1.3 → 0.1.4). V=minor · V=major · V=1.2.3
+```
+
+`make release-local` 하나가 점검 → 버전 올리기·커밋·태그·push → 빌드·서명·공증·DMG(10분 안팎) → 앱 업데이트용 appcast → GitHub Release 업로드 → 올라간 DMG의 해시 확인까지 합니다.
+태그는 이미 push됐는데 CI가 실패해 Release가 없다면 `make release-local-current`로 지금 버전만 올립니다.
+
+처음 한 번 이 맥에 필요한 것(점검이 하나씩 알려 줍니다): Developer ID Application 인증서(Keychain), 공증 프로필(`xcrun notarytool store-credentials askproject --apple-id <Apple ID> --team-id <팀 ID>`), Sparkle 개인 키(Keychain), `gh auth login`. 자세한 내용은 [packaging.md](docs/packaging.md#이-맥에서-릴리스-actions-없이)에 있습니다.
+
+> 레포가 비공개면 Release 파일을 로그인 없이 받을 수 없어 앱 자동 업데이트가 동작하지 않습니다. 스크립트가 끝에 경고합니다.
+
 ## 기여
 
 이슈와 PR을 환영합니다. 개발 환경, 테스트, 커밋 규칙, 지켜야 할 원칙(읽기 전용 봇, 대상 레포 정보 커밋 금지)은 [CONTRIBUTING.md](CONTRIBUTING.md)에 있습니다.
