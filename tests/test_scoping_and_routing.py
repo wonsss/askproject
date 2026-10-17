@@ -35,8 +35,9 @@ def test_domain_globs_include_shared():
     assert DMAP.globs_for([]) is None
 
 
-def test_real_domain_config_loads():
-    m = load_domain_map(Path(__file__).parent.parent / "config")
+def test_default_domain_templates_load():
+    """새 설치가 받는 템플릿(defaults/)이 읽힌다. config/*.yaml은 서비스마다 채우는 파일이라 git에 없다."""
+    m = load_domain_map(Path(__file__).parent.parent / "src" / "askproject" / "defaults")
     assert isinstance(m.domains, list) and isinstance(m.shared, tuple) and isinstance(m.glossary, dict)
 
 
