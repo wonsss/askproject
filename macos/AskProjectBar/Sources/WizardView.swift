@@ -25,8 +25,8 @@ final class WizardModel: ObservableObject {
     @Published var githubOwner = ""
     @Published var githubToken = ""
     @Published var repos: [GitRepo] = []
-    @Published var selectedRepo: GitRepo?
-    @Published var ref = ""
+    /// 고른 레포(full_name → 읽을 브랜치, 비우면 기본 브랜치). 여러 개를 고를 수 있다
+    @Published var selected: [String: String] = [:]
     @Published var apiKey = ""
     @Published var channels: [SlackChannel] = []
     @Published var allowed: Set<String> = []
@@ -69,7 +69,6 @@ final class WizardModel: ObservableObject {
         allowed = Set(ids.filter { $0 != "dm" })
         allowDM = ids.contains("dm")
         hostChannel = c.settings.host_channel ?? c.settings.escalation_channel ?? ""
-        if let r = c.repos.first, selectedRepo == nil { ref = r.ref }
     }
 
     func go(_ s: Step) {
@@ -139,19 +138,38 @@ final class WizardModel: ObservableObject {
             }
             let (list, out) = await Backend.json(RepoList.self, ["setup", "repos"])
             repos = list?.repos ?? []
-            if let current = config?.repos.first {
-                selectedRepo = repos.first { $0.url.lowercased() == current.url.lowercased() }
+            for current in config?.repos ?? [] {  // 이미 등록한 레포는 체크해 둔다
+                if let r = repos.first(where: { $0.url.lowercased() == current.url.lowercased() }), selected[r.full_name] == nil {
+                    selected[r.full_name] = current.ref == r.default_branch ? "" : current.ref
+                }
             }
             note = list.map { CheckResult(ok: $0.ok, detail: $0.ok ? L("읽을 수 있는 레포 %@", $0.detail) : $0.detail, step: "github") }
                 ?? CheckResult(ok: false, detail: out.errorLine, step: "github")
         }
     }
 
+    /// 고른 레포를 저장 순서대로. 이미 등록한 레포가 앞(첫 번째가 기본 레포), 새로 고른 레포는 목록 순서대로 뒤에 붙는다.
+    var selectedRepos: [GitRepo] {
+        let picked = repos.filter { selected[$0.full_name] != nil }
+        let order = (config?.repos ?? []).map { $0.url.lowercased() }
+        return picked.sorted { a, b in
+            (order.firstIndex(of: a.url.lowercased()) ?? Int.max) < (order.firstIndex(of: b.url.lowercased()) ?? Int.max)
+        }
+    }
+
+    func toggle(_ r: GitRepo, _ on: Bool) {
+        if on { selected[r.full_name] = selected[r.full_name] ?? "" } else { selected[r.full_name] = nil }
+    }
+
     func saveRepo() async {
-        guard let r = selectedRepo else { return }
+        let picked = selectedRepos
+        guard !picked.isEmpty else { return }
         await busy(L("레포 확인 중")) {
-            let branch = ref.isEmpty ? r.default_branch : ref
-            let res = await Backend.setConfig(repos: [["name": r.name, "url": r.url, "ref": branch, "description": r.description]])
+            let rows = picked.map { r -> [String: String] in
+                let ref = (selected[r.full_name] ?? "").trimmingCharacters(in: .whitespaces)
+                return ["name": r.name, "url": r.url, "ref": ref.isEmpty ? r.default_branch : ref, "description": r.description]
+            }
+            let res = await Backend.setConfig(repos: rows)
             if !res.ok { note = CheckResult(ok: false, detail: res.error ?? L("저장 실패"), step: "repos"); return }
             let (c, out) = await Backend.json(CheckResult.self, ["setup", "check", "github"])
             note = c ?? CheckResult(ok: false, detail: out.errorLine, step: "github")
@@ -356,19 +374,41 @@ struct WizardView: View {
                     .padding(.top, 18).disabled(m.githubTokenProblem != nil || m.working != nil)
             }
             if !m.repos.isEmpty {
-                HStack {
-                    Picker(L("레포"), selection: $m.selectedRepo) {
-                        Text(L("고르세요")).tag(GitRepo?.none)
-                        ForEach(m.repos) { r in Text(r.full_name + (r.private ? " 🔒" : "")).tag(GitRepo?.some(r)) }
+                Text(L("봇이 읽을 레포를 모두 고르세요. 여러 개를 고르면 함께 찾아 답해요(예: 웹·앱·서버 레포)."))
+                    .font(.callout).foregroundStyle(.secondary)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(m.repos) { r in
+                            HStack {
+                                Toggle(r.full_name + (r.private ? " 🔒" : ""), isOn: Binding(
+                                    get: { m.selected[r.full_name] != nil }, set: { m.toggle(r, $0) }))
+                                Spacer()
+                                if m.selected[r.full_name] != nil {
+                                    TextField(r.default_branch, text: Binding(
+                                        get: { m.selected[r.full_name] ?? "" }, set: { m.selected[r.full_name] = $0 }))
+                                        .frame(width: 110).help(L("읽을 브랜치. 비우면 기본 브랜치"))
+                                }
+                            }
+                        }
                     }
-                    .frame(minWidth: 200, maxWidth: .infinity)
-                    TextField(m.selectedRepo?.default_branch ?? L("브랜치"), text: $m.ref).frame(width: 110)
-                        .help(L("읽을 브랜치. 비우면 기본 브랜치"))
-                    Button(L("이 레포로 저장")) { Task { await m.saveRepo() } }
-                        .fixedSize().disabled(m.selectedRepo == nil || m.working != nil)
+                    .padding(.vertical, 4)
                 }
-            } else if let r = m.config?.repos.first {
-                Label(L("등록된 레포: %@ @ %@", r.url, r.ref), systemImage: "checkmark.circle").font(.callout)
+                .frame(maxHeight: 190)
+                HStack {
+                    if let first = m.selectedRepos.first, m.selectedRepos.count > 1 {
+                        Text(L("기본 레포: %@", first.name)).font(.caption).foregroundStyle(.secondary)
+                            .help(L("레포 이름이 없는 도메인 경로는 기본 레포 것으로 봐요. 순서는 설정 → 레포에서 바꿔요."))
+                    }
+                    Spacer()
+                    Button(m.selectedRepos.count > 1 ? L("고른 레포 %d개 저장", m.selectedRepos.count) : L("이 레포로 저장")) {
+                        Task { await m.saveRepo() }
+                    }
+                    .fixedSize().disabled(m.selectedRepos.isEmpty || m.working != nil)
+                }
+            } else if let repos = m.config?.repos, !repos.isEmpty {
+                ForEach(repos) { r in
+                    Label(L("등록된 레포: %@ @ %@", r.url, r.ref), systemImage: "checkmark.circle").font(.callout)
+                }
             }
         }
     }

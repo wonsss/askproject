@@ -388,7 +388,7 @@ struct SettingsView: View {
 
     private var reposTab: some View {
         SettingsPage {
-            SectionHeader(L("읽을 레포"), L("현재는 첫 번째 레포만 답에 쓰여요. 바꾸면 다음 동기화 때 새로 받아요."))
+            SectionHeader(L("읽을 레포"), L("등록한 레포를 모두 함께 찾아 답해요. 여러 개면 답의 근거 경로가 '레포 이름/…'으로 시작하고, 첫 번째 레포가 기본이에요. 바꾸면 다음 동기화 때 새로 받아요."))
             if m.repos.isEmpty {
                 Text(L("등록된 레포가 없어요.")).foregroundStyle(.secondary)
             }
@@ -399,6 +399,11 @@ struct SettingsView: View {
                             LabeledField(L("이름"), placeholder: "repo1", text: $r.name).frame(width: 140)
                             LabeledField(L("브랜치"), placeholder: "main", text: $r.ref).frame(width: 120)
                             Spacer()
+                            if let i = m.repos.firstIndex(where: { $0.id == r.id }), i > 0 {
+                                Button { m.repos.swapAt(i, i - 1) } label: { Label(L("위로"), systemImage: "arrow.up") }
+                                    .buttonStyle(.borderless).padding(.top, 18)
+                                    .help(L("맨 위 레포가 기본 레포예요(레포 이름이 없는 도메인 경로는 기본 레포 것으로 봐요)."))
+                            }
                             Button(role: .destructive) { m.repos.removeAll { $0.id == r.id } } label: {
                                 Label(L("삭제"), systemImage: "trash")
                             }
