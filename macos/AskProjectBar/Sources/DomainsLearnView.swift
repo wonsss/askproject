@@ -61,9 +61,9 @@ enum LearnValue: Decodable {
     var detail: String {
         switch self {
         case .domain(_, let summary, let terms, let paths):
-            return [summary, terms.isEmpty ? "" : "용어: " + terms.joined(separator: ", "),
-                    "경로: " + paths.joined(separator: "  ")].filter { !$0.isEmpty }.joined(separator: "\n")
-        case .identifiers(let ids): return "식별자: " + ids.joined(separator: ", ")
+            return [summary, terms.isEmpty ? "" : L("용어: ") + terms.joined(separator: ", "),
+                    L("경로: ") + paths.joined(separator: "  ")].filter { !$0.isEmpty }.joined(separator: "\n")
+        case .identifiers(let ids): return L("식별자: ") + ids.joined(separator: ", ")
         }
     }
 }
@@ -144,7 +144,7 @@ final class LearnModel: ObservableObject {
     /// 마지막으로 화면을 준비한 종류. 탭을 옮겼다 돌아오면 .task가 다시 돌지만, 종류가 그대로면 학습 결과를 지우지 않는다
     var preparedKind: String?
 
-    var label: String { kind == "domains" ? "도메인 맵" : "용어 사전" }
+    var label: String { kind == "domains" ? L("도메인 맵") : L("용어 사전") }
 
     func loadPlan() async {
         plan = nil
@@ -156,10 +156,10 @@ final class LearnModel: ObservableObject {
             show(pending)
             let when = pending.created_at.map {
                 let f = DateFormatter()
-                f.dateFormat = "M월 d일 HH:mm"
+                f.dateFormat = Localizer.resolved == .en ? "MMM d, HH:mm" : "M월 d일 HH:mm"
                 return f.string(from: Date(timeIntervalSince1970: $0))
-            } ?? "이전"
-            note = CheckResult(ok: true, detail: "\(when)에 받은 학습 결과를 불러왔어요. 다시 학습하지 않아도 돼요.", step: nil)
+            } ?? L("이전 시점")
+            note = CheckResult(ok: true, detail: L("%@에 받은 학습 결과를 불러왔어요. 다시 학습하지 않아도 돼요.", when), step: nil)
         }
     }
 
@@ -184,12 +184,12 @@ final class LearnModel: ObservableObject {
         defer { running = false; startedAt = nil }
         let (p, out) = await Backend.json(LearnProposal.self, ["learn", kind, "--json"])
         guard let p, p.ok else {
-            note = CheckResult(ok: false, detail: "학습하지 못했어요: " + (p?.error ?? out.errorLine), step: nil)
+            note = CheckResult(ok: false, detail: L("학습하지 못했어요: ") + (p?.error ?? out.errorLine), step: nil)
             return
         }
         show(p)
         if (p.items ?? []).allSatisfy({ !$0.selectable }) {
-            note = CheckResult(ok: true, detail: "바꿀 항목이 없어요. 지금 \(label)와 같거나 잠긴 항목뿐이에요.", step: nil)
+            note = CheckResult(ok: true, detail: L("바꿀 항목이 없어요. 지금 %@와 같거나 잠긴 항목뿐이에요.", label), step: nil)
         }
     }
 
@@ -201,13 +201,13 @@ final class LearnModel: ObservableObject {
         guard let data = try? JSONSerialization.data(withJSONObject: body) else { return }
         let (r, out) = await Backend.json(LearnApplyResult.self, ["learn", kind, "--apply", "-", "--json"], input: data)
         guard let r, r.ok else {
-            note = CheckResult(ok: false, detail: "적용하지 못했어요: " + (r?.error ?? out.errorLine), step: nil)
+            note = CheckResult(ok: false, detail: L("적용하지 못했어요: ") + (r?.error ?? out.errorLine), step: nil)
             return
         }
         let skipped = (r.skipped ?? []).map { "\($0.key): \($0.reason)" }
-        note = CheckResult(ok: true, detail: "\(r.applied?.count ?? 0)개 항목을 적용했어요."
-                           + (r.backup.map { " 이전 파일은 백업했어요(\(($0 as NSString).lastPathComponent))." } ?? "")
-                           + (skipped.isEmpty ? "" : "\n건너뜀 — " + skipped.joined(separator: " · ")), step: nil)
+        note = CheckResult(ok: true, detail: L("%ld개 항목을 적용했어요.", r.applied?.count ?? 0)
+                           + (r.backup.map { L(" 이전 파일은 백업했어요(%@).", ($0 as NSString).lastPathComponent) } ?? "")
+                           + (skipped.isEmpty ? "" : "\n" + L("건너뜀 — ") + skipped.joined(separator: " · ")), step: nil)
         proposal = nil
         selected = []
         fileVersion += 1
@@ -224,12 +224,12 @@ struct DomainsLearnView: View {
 
     var body: some View {
         SettingsPage {
-            Text("AI가 레포의 화면·API·문서를 읽고 초안을 써요. 바로 저장하지 않고, 검증 결과를 보고 고른 항목만 파일에 반영해요. "
-                 + "직접 쓰거나 고친 항목은 잠겨서 학습이 바꾸지 않아요.")
+            Text(L("AI가 레포의 화면·API·문서를 읽고 초안을 써요. 바로 저장하지 않고, 검증 결과를 보고 고른 항목만 파일에 반영해요. ")
+                 + L("직접 쓰거나 고친 항목은 잠겨서 학습이 바꾸지 않아요."))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Picker("", selection: $m.kind) {
-                Text("도메인 맵").tag("domains")
-                Text("용어 사전").tag("glossary")
+                Text(L("도메인 맵")).tag("domains")
+                Text(L("용어 사전")).tag("glossary")
             }
             .pickerStyle(.segmented).labelsHidden().disabled(m.running || m.applying)
 
@@ -239,10 +239,10 @@ struct DomainsLearnView: View {
             currentFile
         } footer: {
             if m.proposal != nil {
-                Button("버리기") { Task { await m.dismiss() } }.disabled(m.applying)
+                Button(L("버리기")) { Task { await m.dismiss() } }.disabled(m.applying)
                 Spacer()
                 if m.applying { ProgressView().controlSize(.small) }
-                Button("선택한 \(m.selected.count)개 적용") {
+                Button(L("선택한 %ld개 적용", m.selected.count)) {
                     Task { await m.apply { app.restartBotIfRunning() } }
                 }
                 .keyboardShortcut(.defaultAction)
@@ -269,12 +269,12 @@ struct DomainsLearnView: View {
             VStack(alignment: .leading, spacing: 8) {
                 if let p = m.plan {
                     if let err = p.error {
-                        Text("예상 비용을 계산하지 못했어요: " + err).font(.caption).foregroundStyle(.orange)
+                        Text(L("예상 비용을 계산하지 못했어요: ") + err).font(.caption).foregroundStyle(.orange)
                     } else {
-                        Text("예상 약 \(money(p.estimate_usd)) (1회 상한 \(money(p.max_usd))) · \(p.model ?? "")")
+                        Text(L("예상 약 %@ (1회 상한 %@) · %@", money(p.estimate_usd), money(p.max_usd), p.model ?? ""))
                             .font(.callout)
                         if let mt = p.materials {
-                            Text("재료: 파일 \(mt.files) · 화면 \(mt.routes) · API \(mt.apis) · 문서 \(mt.docs) · 최근 질문 \(mt.questions)")
+                            Text(L("재료: 파일 %ld · 화면 %ld · API %ld · 문서 %ld · 최근 질문 %ld", mt.files, mt.routes, mt.apis, mt.docs, mt.questions))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         if let n = p.note { Text(n).font(.caption).foregroundStyle(.secondary) }
@@ -289,25 +289,25 @@ struct DomainsLearnView: View {
                     ProgressView().controlSize(.small)
                 }
                 HStack {
-                    Button(m.running ? "학습 중…" : "학습하기…") { confirming = true }
+                    Button(m.running ? L("학습 중…") : L("학습하기…")) { confirming = true }
                         .disabled(m.running || m.applying || m.plan?.ready != true)
                     if m.running, let start = m.startedAt {
                         ProgressView().controlSize(.small)
                         TimelineView(.periodic(from: start, by: 1)) { ctx in
-                            Text("\(Int(ctx.date.timeIntervalSince(start)))초 · 보통 1~3분 걸려요")
+                            Text(L("%ld초 · 보통 1~3분 걸려요", Int(ctx.date.timeIntervalSince(start))))
                                 .font(.caption).foregroundStyle(.secondary).monospacedDigit()
                         }
                     }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-        } label: { Text("\(m.label) 학습하기") }
-        .confirmationDialog("\(m.label)를 학습할까요?", isPresented: $confirming) {
-            Button("학습하기 (약 \(money(m.plan?.estimate_usd)))") { Task { await m.run() } }
-            Button("취소", role: .cancel) {}
+        } label: { Text(L("%@ 학습하기", m.label)) }
+        .confirmationDialog(L("%@를 학습할까요?", m.label), isPresented: $confirming) {
+            Button(L("학습하기 (약 %@)", money(m.plan?.estimate_usd))) { Task { await m.run() } }
+            Button(L("취소"), role: .cancel) {}
         } message: {
-            Text("Claude API를 호출해요. 예상 약 \(money(m.plan?.estimate_usd))이고, 대화가 길어지면 더 들어요. api 모드에서는 약 \(money(m.plan?.max_usd))에 이르면 멈춰요. "
-                 + "결과는 미리 보기로만 보여 주고, 적용하기 전에는 파일을 바꾸지 않아요.")
+            Text(L("Claude API를 호출해요. 예상 약 %@이고, 대화가 길어지면 더 들어요. api 모드에서는 약 %@에 이르면 멈춰요. ", money(m.plan?.estimate_usd), money(m.plan?.max_usd))
+                 + L("결과는 미리 보기로만 보여 주고, 적용하기 전에는 파일을 바꾸지 않아요."))
         }
     }
 
@@ -320,24 +320,24 @@ struct DomainsLearnView: View {
                     Label(stale, systemImage: "clock.arrow.circlepath").font(.caption).foregroundStyle(.orange)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Text("비용 \(money(p.cost_usd)) · 대화 \(p.num_turns ?? 0)회"
-                     + (p.agent_error.map { " · 경고: \($0)" } ?? ""))
+                Text(L("비용 %@ · 대화 %ld회", money(p.cost_usd), p.num_turns ?? 0)
+                     + (p.agent_error.map { L(" · 경고: %@", $0) } ?? ""))
                     .font(.caption).foregroundStyle(.secondary)
                 if let cov = p.coverage {
-                    Text("어느 도메인에도 안 걸리는 파일: \(pct(cov.before.uncovered_ratio)) → \(pct(cov.after.uncovered_ratio)) (모두 적용 시)")
+                    Text(L("어느 도메인에도 안 걸리는 파일: %@ → %@ (모두 적용 시)", pct(cov.before.uncovered_ratio), pct(cov.after.uncovered_ratio)))
                         .font(.caption)
                     if !cov.after.top_uncovered.isEmpty {
-                        Text("남는 폴더: " + cov.after.top_uncovered.map { "\($0.dir) \($0.files)" }.joined(separator: " · "))
+                        Text(L("남는 폴더: ") + cov.after.top_uncovered.map { "\($0.dir) \($0.files)" }.joined(separator: " · "))
                             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                if items.isEmpty { Text("바꿀 항목이 없어요.").font(.callout) }
+                if items.isEmpty { Text(L("바꿀 항목이 없어요.")).font(.callout) }
                 ForEach(items) { item in
                     row(item)
                     Divider()
                 }
                 if let rej = p.rejected, !rej.isEmpty {
-                    DisclosureGroup("검증에서 버린 항목 \(rej.count)개") {
+                    DisclosureGroup(L("검증에서 버린 항목 %ld개", rej.count)) {
                         ForEach(rej) { r in
                             Text("✗ \(r.key) — \(r.reason)").font(.caption).foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -347,17 +347,17 @@ struct DomainsLearnView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-        } label: { Text("미리 보기 — 적용할 항목을 고르세요") }
+        } label: { Text(L("미리 보기 — 적용할 항목을 고르세요")) }
     }
 
     private func pct(_ v: Double) -> String { "\(Int((v * 100).rounded()))%" }
 
     private func badge(_ action: String) -> (String, Color) {
         switch action {
-        case "add": return ("추가", .green)
-        case "change": return ("변경", .blue)
-        case "remove": return ("삭제", .red)
-        default: return ("잠김", .secondary)
+        case "add": return (L("추가"), .green)
+        case "change": return (L("변경"), .blue)
+        case "remove": return (L("삭제"), .red)
+        default: return (L("잠김"), .secondary)
         }
     }
 
@@ -374,22 +374,22 @@ struct DomainsLearnView: View {
                         .background(RoundedRectangle(cornerRadius: 4).fill(color.opacity(0.15))).foregroundStyle(color)
                     Text(item.key).font(.system(.callout, design: .monospaced))
                     Text((item.after ?? item.before)?.title ?? "").font(.callout.bold())
-                    if let n = item.file_count { Text("파일 \(n)개").font(.caption).foregroundStyle(.secondary) }
+                    if let n = item.file_count { Text(L("파일 %ld개", n)).font(.caption).foregroundStyle(.secondary) }
                 }
                 if item.action == "change" || item.action == "locked", let before = item.before {
-                    Text("지금: " + before.detail).font(.caption).foregroundStyle(.secondary)
+                    Text(L("지금: ") + before.detail).font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if let v = item.after ?? item.before {
-                    Text((item.action == "change" || item.action == "locked" ? "제안: " : "") + v.detail)
+                    Text((item.action == "change" || item.action == "locked" ? L("제안: ") : "") + v.detail)
                         .font(.caption).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 }
                 if let r = item.locked_reason {
-                    Label("\(r)이라 바꾸지 않아요. 원하면 파일에서 직접 고치세요.", systemImage: "lock.fill")
+                    Label(L("%@이라 바꾸지 않아요. 원하면 파일에서 직접 고치세요.", r), systemImage: "lock.fill")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if !item.evidence.isEmpty {
-                    Text("근거: " + item.evidence.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                    Text(L("근거: ") + item.evidence.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 ForEach(item.warnings, id: \.self) { w in
@@ -404,16 +404,16 @@ struct DomainsLearnView: View {
     private var currentFile: some View {
         if let dir = configDir {
             let f = m.kind == "domains" ? "domains.yaml" : "glossary.yaml"
-            DisclosureGroup("지금 \(f) 보기") {
+            DisclosureGroup(L("지금 %@ 보기", f)) {
                 ScrollView {
-                    Text((try? String(contentsOfFile: dir + "/" + f, encoding: .utf8)) ?? "(없음)")
+                    Text((try? String(contentsOfFile: dir + "/" + f, encoding: .utf8)) ?? L("(없음)"))
                         .font(.system(.caption, design: .monospaced)).textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(height: 160)
                 .id(m.fileVersion)
             }
-            Button("Finder에서 보기") { NSWorkspace.shared.open(URL(fileURLWithPath: dir)) }
+            Button(L("Finder에서 보기")) { NSWorkspace.shared.open(URL(fileURLWithPath: dir)) }
         }
     }
 }

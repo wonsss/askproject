@@ -37,7 +37,7 @@ enum Backend {
         /// 사람이 읽을 마지막 오류 한 줄(파이썬 traceback이면 마지막 줄이 원인)
         var errorLine: String {
             let lines = (err.isEmpty ? out : err).split(separator: "\n").map(String.init).filter { !$0.isEmpty }
-            return lines.last ?? "알 수 없는 오류 (종료 코드 \(code))"
+            return lines.last ?? L("알 수 없는 오류 (종료 코드 %ld)", Int(code))
         }
     }
 
@@ -67,7 +67,7 @@ enum Backend {
                 do {
                     try p.run()
                 } catch {
-                    cont.resume(returning: Output(code: -1, out: "", err: "실행 실패: \(error.localizedDescription)"))
+                    cont.resume(returning: Output(code: -1, out: "", err: L("실행 실패: %@", error.localizedDescription)))
                     return
                 }
                 if let input {
@@ -105,7 +105,7 @@ enum Backend {
         if !settings.isEmpty { patch["settings"] = settings }
         if !secrets.isEmpty { patch["secrets"] = secrets }
         if let repos { patch["repos"] = repos }
-        guard let data = try? JSONSerialization.data(withJSONObject: patch) else { return (false, "JSON 변환 실패") }
+        guard let data = try? JSONSerialization.data(withJSONObject: patch) else { return (false, L("JSON 변환 실패")) }
         let (res, out) = await json(ConfigSetResult.self, ["config", "set", "--json"], input: data)
         if let res { return (res.ok, res.error) }
         return (false, out.errorLine)

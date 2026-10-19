@@ -206,6 +206,8 @@ bash scripts/build-app.sh           # 배포 앱: 백엔드 내장 + Developer I
 
 앱은 화면만 맡고 백엔드 CLI(`status --json` 등)를 부릅니다. 상태 조회는 Claude를 부르지 않습니다(비용 0).
 
+**화면 언어**: 한국어·English. 설정 → 정보의 '언어'(마법사 첫 화면에도 있음)에서 고르고, 기본값은 시스템 언어를 따릅니다(한국어가 아니면 영어). 바꾸면 열린 창이 바로 바뀝니다. 슬랙 답변과 백엔드 CLI가 돌려주는 메시지(오류·점검 결과)는 바뀌지 않습니다. 번역은 `macos/AskProjectBar/Sources/L10n+*.swift`에 한국어 원문을 키로 둡니다 — 화면 문구를 추가하면 `L("…")`로 감싸고 그 화면의 사전에 영어를 넣으세요.
+
 ### 데이터 보존
 
 - 감사 로그는 SQLite 파일 하나(`data/askproject.sqlite3`, 앱은 `~/Library/Application Support/AskProject/data/`)에 **영구 보존**합니다. 수정·삭제는 트리거가 막고, 개인정보가 섞이면 `redact`로 텍스트만 가립니다.

@@ -199,10 +199,10 @@ enum Health {
 
     var label: String {
         switch self {
-        case .running: return "실행 중"
-        case .restarting: return "재시작 대기"
-        case .off: return "꺼짐"
-        case .unknown: return "확인 중"
+        case .running: return L("실행 중")
+        case .restarting: return L("재시작 대기")
+        case .off: return L("꺼짐")
+        case .unknown: return L("확인 중")
         }
     }
 
@@ -239,11 +239,11 @@ struct BackupItem: Decodable, Identifiable, Hashable {
 
     var kindLabel: String {
         switch kind {
-        case "daily": return "매일 백업"
-        case "pre-migrate": return "업데이트 직전"
-        case "pre-restore": return "복구 직전"
-        case "copy": return "사본 폴더"
-        default: return "직접 고른 파일"
+        case "daily": return L("매일 백업")
+        case "pre-migrate": return L("업데이트 직전")
+        case "pre-restore": return L("복구 직전")
+        case "copy": return L("사본 폴더")
+        default: return L("직접 고른 파일")
         }
     }
 }

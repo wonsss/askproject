@@ -10,7 +10,7 @@ final class WizardModel: ObservableObject {
         case welcome, slack, github, claude, channels, verify, start, share  // 저장된 단계 번호가 바뀌지 않게 끝에만 붙인다
 
         var title: String {
-            ["시작", "슬랙 앱", "GitHub", "Claude", "답할 채널", "점검", "켜기", "팀 공유 (선택)"][rawValue]
+            [L("시작"), L("슬랙 앱"), "GitHub", "Claude", L("답할 채널"), L("점검"), L("켜기"), L("팀 공유 (선택)")][rawValue]
         }
     }
 
@@ -45,21 +45,21 @@ final class WizardModel: ObservableObject {
     static func prefixProblem(_ value: String, _ prefix: String, _ what: String) -> String? {
         let v = value.trimmingCharacters(in: .whitespacesAndNewlines)
         if v.isEmpty { return nil }
-        if v.contains(" ") { return "\(what)에 공백이 들어 있어요" }
-        return v.hasPrefix(prefix) ? nil : "\(what)은 '\(prefix)'로 시작해야 해요"
+        if v.contains(" ") { return L("%@에 공백이 들어 있어요", what) }
+        return v.hasPrefix(prefix) ? nil : L("%@은 '%@'로 시작해야 해요", what, prefix)
     }
 
-    var botTokenProblem: String? { Self.prefixProblem(botToken, "xoxb-", "봇 토큰") }
+    var botTokenProblem: String? { Self.prefixProblem(botToken, "xoxb-", L("봇 토큰")) }
     var appTokenProblem: String? {
-        if appToken.hasPrefix("xoxb-") { return "봇 토큰이 아니라 앱 수준 토큰(xapp-)을 넣어 주세요" }
-        return Self.prefixProblem(appToken, "xapp-", "앱 토큰")
+        if appToken.hasPrefix("xoxb-") { return L("봇 토큰이 아니라 앱 수준 토큰(xapp-)을 넣어 주세요") }
+        return Self.prefixProblem(appToken, "xapp-", L("앱 토큰"))
     }
     var githubTokenProblem: String? {
         let v = githubToken.trimmingCharacters(in: .whitespaces)
         if v.hasPrefix("ghp_") { return nil }  // classic도 받지만 fine-grained를 권한다
-        return Self.prefixProblem(v, "github_pat_", "GitHub 토큰")
+        return Self.prefixProblem(v, "github_pat_", L("GitHub 토큰"))
     }
-    var apiKeyProblem: String? { Self.prefixProblem(apiKey, "sk-ant-", "API 키") }
+    var apiKeyProblem: String? { Self.prefixProblem(apiKey, "sk-ant-", L("API 키")) }
 
     func load() async {
         let (c, _) = await Backend.json(ConfigState.self, ["config", "get", "--json"])
@@ -91,25 +91,25 @@ final class WizardModel: ObservableObject {
     }
 
     func copyAdminRequest() {
-        let text = """
-        안녕하세요. 기획자가 슬랙에서 코드·기획 문서를 근거로 질문할 수 있는 'AskProject' 봇을 설치하려고 해요.
-        방금 만든 슬랙 앱(AskProject)의 워크스페이스 설치 승인을 부탁드려요.
-        - 봇은 멘션·DM에만 답하고, 허용한 채널에서만 동작해요.
-        - 요청 권한: 멘션·DM 읽기, 메시지 쓰기, 파일 읽기·쓰기(봇이 만든 것만), 공개 채널 기록 읽기(선택 기능)
-        """
+        let text = [
+            L("안녕하세요. 기획자가 슬랙에서 코드·기획 문서를 근거로 질문할 수 있는 'AskProject' 봇을 설치하려고 해요."),
+            L("방금 만든 슬랙 앱(AskProject)의 워크스페이스 설치 승인을 부탁드려요."),
+            L("- 봇은 멘션·DM에만 답하고, 허용한 채널에서만 동작해요."),
+            L("- 요청 권한: 멘션·DM 읽기, 메시지 쓰기, 파일 읽기·쓰기(봇이 만든 것만), 공개 채널 기록 읽기(선택 기능)"),
+        ].joined(separator: "\n")
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
-        note = CheckResult(ok: true, detail: "관리자에게 보낼 요청 문구를 복사했어요. 승인되면 이 화면으로 돌아오세요.", step: nil)
+        note = CheckResult(ok: true, detail: L("관리자에게 보낼 요청 문구를 복사했어요. 승인되면 이 화면으로 돌아오세요."), step: nil)
     }
 
     func saveSlack() async {
-        await busy("슬랙 연결 확인 중") {
+        await busy(L("슬랙 연결 확인 중")) {
             var secrets: [String: String] = [:]
             if !botToken.isEmpty { secrets["ASKPROJECT_SLACK_BOT_TOKEN"] = botToken.trimmingCharacters(in: .whitespaces) }
             if !appToken.isEmpty { secrets["ASKPROJECT_SLACK_APP_TOKEN"] = appToken.trimmingCharacters(in: .whitespaces) }
             if !secrets.isEmpty {
                 let r = await Backend.setConfig(secrets: secrets)
-                if !r.ok { note = CheckResult(ok: false, detail: r.error ?? "저장 실패", step: "slack"); return }
+                if !r.ok { note = CheckResult(ok: false, detail: r.error ?? L("저장 실패"), step: "slack"); return }
             }
             let (c, out) = await Backend.json(CheckResult.self, ["setup", "check", "slack"])
             note = c ?? CheckResult(ok: false, detail: out.errorLine, step: "slack")
@@ -130,10 +130,10 @@ final class WizardModel: ObservableObject {
     }
 
     func saveGitHubToken() async {
-        await busy("레포 목록 불러오는 중") {
+        await busy(L("레포 목록 불러오는 중")) {
             if !githubToken.isEmpty {
                 let r = await Backend.setConfig(secrets: ["ASKPROJECT_GITHUB_TOKEN": githubToken.trimmingCharacters(in: .whitespaces)])
-                if !r.ok { note = CheckResult(ok: false, detail: r.error ?? "저장 실패", step: "github"); return }
+                if !r.ok { note = CheckResult(ok: false, detail: r.error ?? L("저장 실패"), step: "github"); return }
                 githubToken = ""
                 await load()
             }
@@ -142,17 +142,17 @@ final class WizardModel: ObservableObject {
             if let current = config?.repos.first {
                 selectedRepo = repos.first { $0.url.lowercased() == current.url.lowercased() }
             }
-            note = list.map { CheckResult(ok: $0.ok, detail: $0.ok ? "읽을 수 있는 레포 \($0.detail)" : $0.detail, step: "github") }
+            note = list.map { CheckResult(ok: $0.ok, detail: $0.ok ? L("읽을 수 있는 레포 %@", $0.detail) : $0.detail, step: "github") }
                 ?? CheckResult(ok: false, detail: out.errorLine, step: "github")
         }
     }
 
     func saveRepo() async {
         guard let r = selectedRepo else { return }
-        await busy("레포 확인 중") {
+        await busy(L("레포 확인 중")) {
             let branch = ref.isEmpty ? r.default_branch : ref
             let res = await Backend.setConfig(repos: [["name": r.name, "url": r.url, "ref": branch, "description": r.description]])
-            if !res.ok { note = CheckResult(ok: false, detail: res.error ?? "저장 실패", step: "repos"); return }
+            if !res.ok { note = CheckResult(ok: false, detail: res.error ?? L("저장 실패"), step: "repos"); return }
             let (c, out) = await Backend.json(CheckResult.self, ["setup", "check", "github"])
             note = c ?? CheckResult(ok: false, detail: out.errorLine, step: "github")
             await load()
@@ -160,10 +160,10 @@ final class WizardModel: ObservableObject {
     }
 
     func saveClaude() async {
-        await busy("Claude 확인 중 (약 $0.00001)") {
+        await busy(L("Claude 확인 중 (약 $0.00001)")) {
             if !apiKey.isEmpty {
                 let r = await Backend.setConfig(secrets: ["ANTHROPIC_API_KEY": apiKey.trimmingCharacters(in: .whitespaces)])
-                if !r.ok { note = CheckResult(ok: false, detail: r.error ?? "저장 실패", step: "claude"); return }
+                if !r.ok { note = CheckResult(ok: false, detail: r.error ?? L("저장 실패"), step: "claude"); return }
                 apiKey = ""
             }
             let (c, out) = await Backend.json(CheckResult.self, ["setup", "check", "claude"])
@@ -173,10 +173,10 @@ final class WizardModel: ObservableObject {
     }
 
     func loadChannels() async {
-        await busy("봇이 들어간 채널 불러오는 중") {
+        await busy(L("봇이 들어간 채널 불러오는 중")) {
             let (list, out) = await Backend.json(ChannelList.self, ["setup", "channels"])
             channels = list?.channels ?? []
-            note = list.map { CheckResult(ok: $0.ok, detail: $0.ok ? "봇이 들어간 채널 \($0.detail)" : $0.detail, step: "channels") }
+            note = list.map { CheckResult(ok: $0.ok, detail: $0.ok ? L("봇이 들어간 채널 %@", $0.detail) : $0.detail, step: "channels") }
                 ?? CheckResult(ok: false, detail: out.errorLine, step: "channels")
         }
     }
@@ -185,17 +185,17 @@ final class WizardModel: ObservableObject {
         var ids = Array(allowed).sorted()
         if allowDM { ids.append("dm") }
         guard !ids.isEmpty else {
-            note = CheckResult(ok: false, detail: "답할 채널을 하나 이상 고르거나 DM을 허용하세요", step: "channels")
+            note = CheckResult(ok: false, detail: L("답할 채널을 하나 이상 고르거나 DM을 허용하세요"), step: "channels")
             return false
         }
         let r = await Backend.setConfig(settings: ["allowed_channels": ids.joined(separator: ","),
                                                    "host_channel": hostChannel])
-        note = r.ok ? nil : CheckResult(ok: false, detail: r.error ?? "저장 실패", step: "channels")
+        note = r.ok ? nil : CheckResult(ok: false, detail: r.error ?? L("저장 실패"), step: "channels")
         return r.ok
     }
 
     func runDoctor() async {
-        await busy("연결까지 점검 중") {
+        await busy(L("연결까지 점검 중")) {
             let (items, out) = await Backend.json([DoctorItem].self, ["doctor", "--online", "--json"])
             checks = items ?? []
             if items == nil { note = CheckResult(ok: false, detail: out.errorLine, step: nil) }
@@ -205,25 +205,25 @@ final class WizardModel: ObservableObject {
     var blocking: [DoctorItem] { checks.filter { $0.status == "fail" && $0.required } }
 
     func start() async {
-        await busy("레포를 받아 색인하는 중 (처음엔 몇 분 걸려요)") {
+        await busy(L("레포를 받아 색인하는 중 (처음엔 몇 분 걸려요)")) {
             let sync = await Backend.run(["sync", "--no-external"])
             if !sync.ok {
-                note = CheckResult(ok: false, detail: "레포 동기화 실패: " + sync.errorLine, step: "github")
+                note = CheckResult(ok: false, detail: L("레포 동기화 실패: ") + sync.errorLine, step: "github")
                 return
             }
             if Backend.isBundled {
                 do {
                     let approval = try Agents.enableAll()
                     note = CheckResult(ok: !approval, detail: approval
-                        ? "시스템 설정 → 로그인 항목에서 AskProject를 허용해 주세요. 허용하면 봇이 바로 시작돼요."
-                        : "봇을 켰어요. 허용한 채널에서 @AskProject로 질문해 보세요.", step: nil)
+                        ? L("시스템 설정 → 로그인 항목에서 AskProject를 허용해 주세요. 허용하면 봇이 바로 시작돼요.")
+                        : L("봇을 켰어요. 허용한 채널에서 @AskProject로 질문해 보세요."), step: nil)
                 } catch {
-                    note = CheckResult(ok: false, detail: "켜기 실패: \(error.localizedDescription)", step: nil)
+                    note = CheckResult(ok: false, detail: L("켜기 실패: %@", error.localizedDescription), step: nil)
                     return
                 }
             } else {
                 let r = await Backend.run(["host", "on"])
-                note = CheckResult(ok: r.ok, detail: r.ok ? "봇을 켰어요(개발 모드)." : r.errorLine, step: nil)
+                note = CheckResult(ok: r.ok, detail: r.ok ? L("봇을 켰어요(개발 모드).") : r.errorLine, step: nil)
             }
             started = true
             UserDefaults.standard.set(true, forKey: "wizard.done")
@@ -236,6 +236,7 @@ struct WizardView: View {
     @StateObject private var m = WizardModel()
     @StateObject private var share = SettingsModel()
     @AppStorage(Privacy.ackKey) private var privacyAck = false
+    @ObservedObject private var lang = Localizer.shared
 
     var body: some View {
         HStack(spacing: 0) {
@@ -256,7 +257,7 @@ struct WizardView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("AskProject 설정").font(.headline).padding(.bottom, 6)
+            Text(L("AskProject 설정")).font(.headline).padding(.bottom, 6)
             ForEach(WizardModel.Step.allCases, id: \.self) { s in
                 HStack(spacing: 8) {
                     Image(systemName: s.rawValue < m.step.rawValue ? "checkmark.circle.fill"
@@ -268,7 +269,7 @@ struct WizardView: View {
             }
             Spacer()
             if m.slackPending {
-                Label("슬랙 승인 대기 중", systemImage: "hourglass").font(.caption).foregroundStyle(.orange)
+                Label(L("슬랙 승인 대기 중"), systemImage: "hourglass").font(.caption).foregroundStyle(.orange)
             }
         }
         .padding(20)
@@ -292,38 +293,46 @@ struct WizardView: View {
 
     private var welcome: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("기획자의 슬랙 질문에 코드와 기획 문서로 답하는 봇을 이 맥에 설치해요").font(.title3.weight(.semibold))
-            Text("워크스페이스 관리자 한 명이 한 대에만 설치하면 돼요. 기획자는 슬랙에서 @AskProject로 묻기만 해요.")
+            HStack {
+                Spacer()
+                Picker(L("언어"), selection: $lang.choice) {
+                    ForEach(AppLanguage.allCases) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.menu)
+                .fixedSize()
+            }
+            Text(L("기획자의 슬랙 질문에 코드와 기획 문서로 답하는 봇을 이 맥에 설치해요")).font(.title3.weight(.semibold))
+            Text(L("워크스페이스 관리자 한 명이 한 대에만 설치하면 돼요. 기획자는 슬랙에서 @AskProject로 묻기만 해요."))
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 6) {
-                Label("슬랙 앱 만들기 — 워크스페이스에 따라 관리자 승인이 필요해요", systemImage: "bubble.left.and.bubble.right")
-                Label("GitHub 토큰 — 고른 레포의 내용 읽기만 허용", systemImage: "chevron.left.forwardslash.chevron.right")
-                Label("Claude API 키 — 질문할 때만 비용이 들어요", systemImage: "key")
-                Label("답할 채널 고르기 — 코드 내용이 보이는 범위예요", systemImage: "number")
+                Label(L("슬랙 앱 만들기 — 워크스페이스에 따라 관리자 승인이 필요해요"), systemImage: "bubble.left.and.bubble.right")
+                Label(L("GitHub 토큰 — 고른 레포의 내용 읽기만 허용"), systemImage: "chevron.left.forwardslash.chevron.right")
+                Label(L("Claude API 키 — 질문할 때만 비용이 들어요"), systemImage: "key")
+                Label(L("답할 채널 고르기 — 코드 내용이 보이는 범위예요"), systemImage: "number")
             }
             .font(.callout)
-            Text("이 맥은 봇이 켜져 있는 동안 잠들지 않게 설정할 수 있어요(설정 → 맥 운영). 다른 맥에 같은 봇을 또 켜면 질문이 나뉘니 한 대만 켜 두세요.")
+            Text(L("이 맥은 봇이 켜져 있는 동안 잠들지 않게 설정할 수 있어요(설정 → 맥 운영). 다른 맥에 같은 봇을 또 켜면 질문이 나뉘니 한 대만 켜 두세요."))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             PrivacySummaryCard()
-            Toggle("데이터가 Anthropic Claude API와 내가 연결한 서비스로만 간다는 것을 이해했어요", isOn: $privacyAck)
+            Toggle(L("데이터가 Anthropic Claude API와 내가 연결한 서비스로만 간다는 것을 이해했어요"), isOn: $privacyAck)
                 .toggleStyle(.checkbox).font(.callout)
         }
     }
 
     private var slack: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("1. 슬랙 앱 만들기").font(.title3.weight(.semibold))
-            Text("버튼을 누르면 설정이 미리 채워진 슬랙 앱 생성 화면이 열려요. 워크스페이스를 고르고 'Create'를 누르세요.")
+            Text(L("1. 슬랙 앱 만들기")).font(.title3.weight(.semibold))
+            Text(L("버튼을 누르면 설정이 미리 채워진 슬랙 앱 생성 화면이 열려요. 워크스페이스를 고르고 'Create'를 누르세요."))
                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
-                Button("슬랙 앱 만들기 열기") { Task { await m.openSlackCreate() } }.buttonStyle(.borderedProminent)
-                Button("관리자 요청 문구 복사") { m.copyAdminRequest() }
-                Toggle("관리자 승인 대기 중", isOn: $m.slackPending).toggleStyle(.checkbox)
+                Button(L("슬랙 앱 만들기 열기")) { Task { await m.openSlackCreate() } }.buttonStyle(.borderedProminent)
+                Button(L("관리자 요청 문구 복사")) { m.copyAdminRequest() }
+                Toggle(L("관리자 승인 대기 중"), isOn: $m.slackPending).toggleStyle(.checkbox)
             }
-            Text("2. 토큰 두 개 붙여넣기").font(.headline).padding(.top, 6)
-            TokenField(title: "봇 토큰 — Install App → Bot User OAuth Token", placeholder: "xoxb-…", text: $m.botToken,
+            Text(L("2. 토큰 두 개 붙여넣기")).font(.headline).padding(.top, 6)
+            TokenField(title: L("봇 토큰 — Install App → Bot User OAuth Token"), placeholder: "xoxb-…", text: $m.botToken,
                        problem: m.botTokenProblem, saved: m.secretSaved("ASKPROJECT_SLACK_BOT_TOKEN"))
-            TokenField(title: "앱 토큰 — Basic Information → App-Level Tokens → Generate (connections:write)",
+            TokenField(title: L("앱 토큰 — Basic Information → App-Level Tokens → Generate (connections:write)"),
                        placeholder: "xapp-…", text: $m.appToken, problem: m.appTokenProblem,
                        saved: m.secretSaved("ASKPROJECT_SLACK_APP_TOKEN"))
         }
@@ -331,60 +340,60 @@ struct WizardView: View {
 
     private var github: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("GitHub 토큰과 레포").font(.title3.weight(.semibold))
-            Text("레포 내용 읽기(contents: read)만 있는 토큰을 만들어요. 화면이 미리 채워져 열리고, 'Repository access'에서 봇이 읽을 레포만 고르면 돼요.")
+            Text(L("GitHub 토큰과 레포")).font(.title3.weight(.semibold))
+            Text(L("레포 내용 읽기(contents: read)만 있는 토큰을 만들어요. 화면이 미리 채워져 열리고, 'Repository access'에서 봇이 읽을 레포만 고르면 돼요."))
                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
-                TextField("레포 소유 조직(예: my-org, 개인이면 비움)", text: $m.githubOwner).frame(width: 260)
-                Button("토큰 만들기 열기") { Task { await m.openPATCreate() } }.buttonStyle(.borderedProminent)
+                TextField(L("레포 소유 조직(예: my-org, 개인이면 비움)"), text: $m.githubOwner).frame(width: 260)
+                Button(L("토큰 만들기 열기")) { Task { await m.openPATCreate() } }.buttonStyle(.borderedProminent)
             }
-            Text("조직이 토큰 승인을 요구하면 조직 관리자가 승인해야 레포가 보여요. 토큰은 90일 뒤 만료되고, 7일 전부터 메뉴 막대에 알려 드려요.")
+            Text(L("조직이 토큰 승인을 요구하면 조직 관리자가 승인해야 레포가 보여요. 토큰은 90일 뒤 만료되고, 7일 전부터 메뉴 막대에 알려 드려요."))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack(alignment: .top) {
-                TokenField(title: "토큰", placeholder: "github_pat_…", text: $m.githubToken, problem: m.githubTokenProblem,
+                TokenField(title: L("토큰"), placeholder: "github_pat_…", text: $m.githubToken, problem: m.githubTokenProblem,
                            saved: m.secretSaved("ASKPROJECT_GITHUB_TOKEN"))
-                Button("레포 불러오기") { Task { await m.saveGitHubToken() } }
+                Button(L("레포 불러오기")) { Task { await m.saveGitHubToken() } }
                     .padding(.top, 18).disabled(m.githubTokenProblem != nil || m.working != nil)
             }
             if !m.repos.isEmpty {
                 HStack {
-                    Picker("레포", selection: $m.selectedRepo) {
-                        Text("고르세요").tag(GitRepo?.none)
+                    Picker(L("레포"), selection: $m.selectedRepo) {
+                        Text(L("고르세요")).tag(GitRepo?.none)
                         ForEach(m.repos) { r in Text(r.full_name + (r.private ? " 🔒" : "")).tag(GitRepo?.some(r)) }
                     }
                     .frame(minWidth: 200, maxWidth: .infinity)
-                    TextField(m.selectedRepo?.default_branch ?? "브랜치", text: $m.ref).frame(width: 110)
-                        .help("읽을 브랜치. 비우면 기본 브랜치")
-                    Button("이 레포로 저장") { Task { await m.saveRepo() } }
+                    TextField(m.selectedRepo?.default_branch ?? L("브랜치"), text: $m.ref).frame(width: 110)
+                        .help(L("읽을 브랜치. 비우면 기본 브랜치"))
+                    Button(L("이 레포로 저장")) { Task { await m.saveRepo() } }
                         .fixedSize().disabled(m.selectedRepo == nil || m.working != nil)
                 }
             } else if let r = m.config?.repos.first {
-                Label("등록된 레포: \(r.url) @ \(r.ref)", systemImage: "checkmark.circle").font(.callout)
+                Label(L("등록된 레포: %@ @ %@", r.url, r.ref), systemImage: "checkmark.circle").font(.callout)
             }
         }
     }
 
     private var claude: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Claude API 키").font(.title3.weight(.semibold))
-            Text("Claude Console에서 키를 만들고 크레딧을 충전하세요. 질문 하나에 보통 $0.01~$0.10이 들어요. 워크스페이스 사용 한도를 걸어 두길 권해요.")
+            Text(L("Claude API 키")).font(.title3.weight(.semibold))
+            Text(L("Claude Console에서 키를 만들고 크레딧을 충전하세요. 질문 하나에 보통 $0.01~$0.10이 들어요. 워크스페이스 사용 한도를 걸어 두길 권해요."))
                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Button("Claude Console 열기") { NSWorkspace.shared.open(URL(string: "https://console.anthropic.com/settings/keys")!) }
-            TokenField(title: "API 키", placeholder: "sk-ant-…", text: $m.apiKey, problem: m.apiKeyProblem,
+            Button(L("Claude Console 열기")) { NSWorkspace.shared.open(URL(string: "https://console.anthropic.com/settings/keys")!) }
+            TokenField(title: L("API 키"), placeholder: "sk-ant-…", text: $m.apiKey, problem: m.apiKeyProblem,
                        saved: m.secretSaved("ANTHROPIC_API_KEY"))
-            Text("키는 이 맥의 Keychain에만 저장돼요. 개인 Claude 구독 로그인은 다른 사람에게 답하는 봇에 쓸 수 없어서 지원하지 않아요.")
+            Text(L("키는 이 맥의 Keychain에만 저장돼요. 개인 Claude 구독 로그인은 다른 사람에게 답하는 봇에 쓸 수 없어서 지원하지 않아요."))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private var channelsStep: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("봇이 답할 채널").font(.title3.weight(.semibold))
-            Text("봇은 GitHub 토큰이 읽을 수 있는 코드를 근거로 답해요. 고른 채널의 모든 멤버가 그 내용을 볼 수 있으니 범위를 좁게 정하세요. 채널에 봇을 먼저 초대하세요(/invite @AskProject).")
+            Text(L("봇이 답할 채널")).font(.title3.weight(.semibold))
+            Text(L("봇은 GitHub 토큰이 읽을 수 있는 코드를 근거로 답해요. 고른 채널의 모든 멤버가 그 내용을 볼 수 있으니 범위를 좁게 정하세요. 채널에 봇을 먼저 초대하세요(/invite @AskProject)."))
                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
-                Button("채널 불러오기") { Task { await m.loadChannels() } }
-                Toggle("DM으로도 질문 받기", isOn: $m.allowDM).toggleStyle(.checkbox)
+                Button(L("채널 불러오기")) { Task { await m.loadChannels() } }
+                Toggle(L("DM으로도 질문 받기"), isOn: $m.allowDM).toggleStyle(.checkbox)
             }
             if !m.channels.isEmpty {
                 ScrollView {
@@ -399,12 +408,12 @@ struct WizardView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(height: 140)
-                Picker("운영 채널(호스트 중복 감지·확인 요청)", selection: $m.hostChannel) {
-                    Text("없음").tag("")
+                Picker(L("운영 채널(호스트 중복 감지·확인 요청)"), selection: $m.hostChannel) {
+                    Text(L("없음")).tag("")
                     ForEach(m.channels) { c in Text("#\(c.name)").tag(c.id) }
                 }
                 .frame(width: 420)
-                Text("운영 채널에는 이 맥이 켜져 있다는 메시지 하나가 제자리에서 갱신돼요. 다른 맥에서 같은 봇이 켜지면 알려 드려요.")
+                Text(L("운영 채널에는 이 맥이 켜져 있다는 메시지 하나가 제자리에서 갱신돼요. 다른 맥에서 같은 봇이 켜지면 알려 드려요."))
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -413,8 +422,8 @@ struct WizardView: View {
 
     private var verify: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("연결 점검").font(.title3.weight(.semibold))
-            Button("다시 점검") { Task { await m.runDoctor() } }.disabled(m.working != nil)
+            Text(L("연결 점검")).font(.title3.weight(.semibold))
+            Button(L("다시 점검")) { Task { await m.runDoctor() } }.disabled(m.working != nil)
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(m.checks) { c in
@@ -426,7 +435,7 @@ struct WizardView: View {
                             }
                             Spacer()
                             if c.status != "ok", let step = fixStep(c.step) {
-                                Button("고치기") { m.go(step) }.controlSize(.small)
+                                Button(L("고치기")) { m.go(step) }.controlSize(.small)
                             }
                         }
                     }
@@ -439,19 +448,19 @@ struct WizardView: View {
 
     private var startStep: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(m.started ? "준비 완료" : "봇 켜기").font(.title3.weight(.semibold))
-            Text("레포를 받아 색인한 뒤 봇·웹 콘솔·매일 백업을 켜요. 처음 켤 때 macOS가 '로그인 항목' 허용을 물어보면 허용해 주세요.")
+            Text(m.started ? L("준비 완료") : L("봇 켜기")).font(.title3.weight(.semibold))
+            Text(L("레포를 받아 색인한 뒤 봇·웹 콘솔·매일 백업을 켜요. 처음 켤 때 macOS가 '로그인 항목' 허용을 물어보면 허용해 주세요."))
                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if !m.started {
-                Button("켜기") { Task { await m.start() } }.buttonStyle(.borderedProminent).disabled(m.working != nil)
+                Button(L("켜기")) { Task { await m.start() } }.buttonStyle(.borderedProminent).disabled(m.working != nil)
             } else {
-                Text("허용한 채널에서 이렇게 물어보세요: @AskProject 로그인 화면은 어떤 조건에서 보여?").font(.callout)
-                Text("팀원도 브라우저로 웹 콘솔(질문·답 기록)을 보게 하려면 다음 단계에서 팀 공유를 설정하세요. 나중에 설정 → 팀 공유에서 해도 돼요.")
+                Text(L("허용한 채널에서 이렇게 물어보세요: @AskProject 로그인 화면은 어떤 조건에서 보여?")).font(.callout)
+                Text(L("팀원도 브라우저로 웹 콘솔(질문·답 기록)을 보게 하려면 다음 단계에서 팀 공유를 설정하세요. 나중에 설정 → 팀 공유에서 해도 돼요."))
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 HStack {
-                    Button("맥 운영 설정 열기") { WindowManager.shared.showSettings(tab: .host) }
-                    Button("닫기") { WindowManager.shared.closeWizard() }
-                    Button("팀 공유 설정하기") { m.go(.share) }.buttonStyle(.borderedProminent)
+                    Button(L("맥 운영 설정 열기")) { WindowManager.shared.showSettings(tab: .host) }
+                    Button(L("닫기")) { WindowManager.shared.closeWizard() }
+                    Button(L("팀 공유 설정하기")) { m.go(.share) }.buttonStyle(.borderedProminent)
                 }
             }
         }
@@ -459,8 +468,8 @@ struct WizardView: View {
 
     private var shareStep: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("팀 공유 (선택)").font(.title3.weight(.semibold))
-            Text("웹 콘솔을 Cloudflare로 공개 주소에 이어, 허용한 팀원 이메일로만 들어오게 해요. 도메인이 없거나 지금 필요 없으면 건너뛰어도 돼요.")
+            Text(L("팀 공유 (선택)")).font(.title3.weight(.semibold))
+            Text(L("웹 콘솔을 Cloudflare로 공개 주소에 이어, 허용한 팀원 이메일로만 들어오게 해요. 도메인이 없거나 지금 필요 없으면 건너뛰어도 돼요."))
                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             ScrollView {
                 TeamShareForm(m: share).padding(.trailing, 12)
@@ -489,10 +498,10 @@ struct WizardView: View {
             }
             Spacer()
             if m.step != .welcome {
-                Button("이전") { m.go(WizardModel.Step(rawValue: m.step.rawValue - 1)!) }.disabled(m.working != nil)
+                Button(L("이전")) { m.go(WizardModel.Step(rawValue: m.step.rawValue - 1)!) }.disabled(m.working != nil)
             }
             if m.step == .share {
-                Button(share.shareOn ? "완료" : "건너뛰고 닫기") { WindowManager.shared.closeWizard() }
+                Button(share.shareOn ? L("완료") : L("건너뛰고 닫기")) { WindowManager.shared.closeWizard() }
             } else if m.step != .start {
                 Button(nextLabel) { Task { await next() } }
                     .buttonStyle(.borderedProminent)
@@ -504,9 +513,9 @@ struct WizardView: View {
 
     private var nextLabel: String {
         switch m.step {
-        case .slack: return m.botToken.isEmpty && m.appToken.isEmpty ? "다음" : "저장하고 확인"
-        case .claude: return m.apiKey.isEmpty ? "다음" : "저장하고 확인"
-        default: return "다음"
+        case .slack: return m.botToken.isEmpty && m.appToken.isEmpty ? L("다음") : L("저장하고 확인")
+        case .claude: return m.apiKey.isEmpty ? L("다음") : L("저장하고 확인")
+        default: return L("다음")
         }
     }
 
@@ -557,10 +566,10 @@ struct TokenField: View {
             HStack {
                 Text(title).font(.caption).foregroundStyle(.secondary)
                 if saved && text.isEmpty {
-                    Label("저장됨", systemImage: "checkmark.seal.fill").font(.caption).foregroundStyle(.green)
+                    Label(L("저장됨"), systemImage: "checkmark.seal.fill").font(.caption).foregroundStyle(.green)
                 }
             }
-            SecureField(saved ? "저장된 값 유지 (바꾸려면 새로 붙여넣기)" : placeholder, text: $text)
+            SecureField(saved ? L("저장된 값 유지 (바꾸려면 새로 붙여넣기)") : placeholder, text: $text)
                 .textFieldStyle(.roundedBorder)
             if let problem {
                 Text(problem).font(.caption).foregroundStyle(.red)

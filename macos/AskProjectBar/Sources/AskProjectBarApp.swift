@@ -3,6 +3,7 @@
 // 배포 앱은 번들에 백엔드가 들어 있고(Contents/Resources/backend), 상시 작업은 SMAppService로 등록한다.
 
 import AppKit
+import Combine
 import SwiftUI
 
 /// 마법사·설정 창. 메뉴 막대 전용 앱(LSUIElement)이라 SwiftUI Window 장면 대신 직접 띄운다(시작할 때 자동으로 열기 위해).
@@ -11,6 +12,15 @@ final class WindowManager {
     static let shared = WindowManager()
     private var wizard: NSWindow?
     private var settings: NSWindow?
+    /// 창마다 제목을 만드는 함수. 언어를 바꾸면 열린 창 제목을 다시 단다.
+    private var titles: [ObjectIdentifier: (NSWindow, () -> String)] = [:]
+    private var langWatch: AnyCancellable?
+
+    private init() {
+        langWatch = Localizer.shared.$choice.dropFirst().receive(on: DispatchQueue.main).sink { [weak self] _ in
+            self?.titles.values.forEach { $0.0.title = $0.1() }
+        }
+    }
 
     func showWizard(step: WizardModel.Step? = nil) {
         if let step {  // 원하는 단계로 다시 연다(마법사는 저장된 단계에서 시작한다)
@@ -18,20 +28,20 @@ final class WindowManager {
             wizard?.close()
             wizard = nil
         }
-        wizard = show(wizard, title: "AskProject 설정", view: WizardView())
+        wizard = show(wizard, title: { L("AskProject 설정") }, view: WizardView())
     }
 
     private var privacy: NSWindow?
 
     func showPrivacy() {
-        privacy = show(privacy, title: "데이터와 개인정보", view: PrivacyDetailView())
+        privacy = show(privacy, title: { L("데이터와 개인정보") }, view: PrivacyDetailView())
     }
 
     private var restore: NSWindow?
 
     func showRestore() {
         if let w = restore, !w.isVisible { restore = nil }  // 닫은 창은 새로 열어 목록을 다시 읽는다
-        restore = show(restore, title: "백업에서 복구", view: RestoreView())
+        restore = show(restore, title: { L("백업에서 복구") }, view: RestoreView())
     }
 
     func closeWizard() {
@@ -40,17 +50,20 @@ final class WindowManager {
 
     func showSettings(tab: SettingsTab = .connections) {
         if settings != nil { settings?.close(); settings = nil }
-        settings = show(settings, title: "AskProject 설정", view: SettingsView(tab: tab))
+        SettingsView.lastTab = tab
+        settings = show(settings, title: { L("AskProject 설정") }, view: SettingsView(tab: tab))
     }
 
-    private func show<V: View>(_ existing: NSWindow?, title: String, view: V) -> NSWindow {
+    private func show<V: View>(_ existing: NSWindow?, title: @escaping () -> String, view: V) -> NSWindow {
         if let w = existing, w.isVisible {
             w.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return w
         }
-        let w = NSWindow(contentViewController: NSHostingController(rootView: view))
-        w.title = title
+        let w = NSWindow(contentViewController: NSHostingController(rootView: LocalizedRoot { view }))
+        w.title = title()
+        titles = titles.filter { $0.value.0.isVisible }
+        titles[ObjectIdentifier(w)] = (w, title)
         w.styleMask = [.titled, .closable, .miniaturizable]
         w.isReleasedWhenClosed = false
         w.center()
@@ -82,10 +95,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let path = Bundle.main.bundlePath
         if path.hasPrefix("/Applications/") { return false }
         let alert = NSAlert()
-        alert.messageText = "AskProject를 응용 프로그램 폴더로 옮길까요?"
-        alert.informativeText = "봇이 이 맥에서 계속 돌려면 응용 프로그램 폴더에 있어야 해요. 옮긴 뒤 다시 열어요."
-        alert.addButton(withTitle: "옮기기")
-        alert.addButton(withTitle: "나중에")
+        alert.messageText = L("AskProject를 응용 프로그램 폴더로 옮길까요?")
+        alert.informativeText = L("봇이 이 맥에서 계속 돌려면 응용 프로그램 폴더에 있어야 해요. 옮긴 뒤 다시 열어요.")
+        alert.addButton(withTitle: L("옮기기"))
+        alert.addButton(withTitle: L("나중에"))
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return false }
         let dest = "/Applications/AskProject.app"
@@ -107,8 +120,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return true
         } catch {
             let fail = NSAlert()
-            fail.messageText = "옮기지 못했어요"
-            fail.informativeText = "\(error.localizedDescription)\nFinder에서 AskProject를 응용 프로그램 폴더로 끌어다 놓은 뒤 다시 여세요."
+            fail.messageText = L("옮기지 못했어요")
+            fail.informativeText = error.localizedDescription + "\n" + L("Finder에서 AskProject를 응용 프로그램 폴더로 끌어다 놓은 뒤 다시 여세요.")
             fail.runModal()
             return false
         }
@@ -127,7 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let r = await Backend.run(["migrate"])
         if !r.ok {
             // 빌드 번호를 기록하지 않는다 — 다음 실행에서 마이그레이션과 재등록을 다시 시도한다
-            AppModel.shared.message = "업데이트 후 데이터 마이그레이션 실패: \(r.errorLine) — 봇을 켜지 않았어요. 진단 묶음을 보내 주세요."
+            AppModel.shared.message = L("업데이트 후 데이터 마이그레이션 실패: %@ — 봇을 켜지 않았어요. 진단 묶음을 보내 주세요.", r.errorLine)
             return
         }
         Agents.reloadEnabled()
@@ -142,7 +155,7 @@ struct AskProjectBarApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            PanelView(model: model)
+            LocalizedRoot { PanelView(model: model) }
         } label: {
             Image(systemName: model.health.symbol)
             if !model.warnings.isEmpty {

@@ -40,21 +40,21 @@ final class AppModel: ObservableObject {
     var warnings: [String] {
         guard let s = status else { return [] }
         var w: [String] = []
-        if protocolMismatch { w.append("앱과 백엔드 버전이 달라요. 앱을 다시 설치해 주세요.") }
+        if protocolMismatch { w.append(L("앱과 백엔드 버전이 달라요. 앱을 다시 설치해 주세요.")) }
         if let c = s.host_conflict, !c.others.isEmpty {
-            w.append("다른 맥(\(c.others.map(\.host_name).joined(separator: ", ")))에서 같은 슬랙 봇이 켜져 있어요. 한 대만 켜 두세요.")
+            w.append(L("다른 맥(%@)에서 같은 슬랙 봇이 켜져 있어요. 한 대만 켜 두세요.", c.others.map(\.host_name).joined(separator: ", ")))
         }
-        if isApp && Agents.needsApproval { w.append("시스템 설정 → 로그인 항목에서 AskProject를 허용해야 봇이 켜져요.") }
+        if isApp && Agents.needsApproval { w.append(L("시스템 설정 → 로그인 항목에서 AskProject를 허용해야 봇이 켜져요.")) }
         if let t = s.github_token, t.warning, let d = t.days_left {
-            w.append(d <= 0 ? "GitHub 토큰이 만료됐어요. 새 토큰을 발급해 설정에서 바꿔 주세요."
-                            : "GitHub 토큰이 \(Int(d.rounded(.up)))일 뒤 만료돼요. 미리 새 토큰으로 바꿔 주세요.")
+            w.append(d <= 0 ? L("GitHub 토큰이 만료됐어요. 새 토큰을 발급해 설정에서 바꿔 주세요.")
+                            : L("GitHub 토큰이 %ld일 뒤 만료돼요. 미리 새 토큰으로 바꿔 주세요.", Int(d.rounded(.up))))
         }
         if s.configured == true && (s.allowed_channels ?? []).isEmpty {
-            w.append("답할 채널이 정해지지 않았어요. 봇이 초대된 모든 채널에서 코드 내용을 답해요.")
+            w.append(L("답할 채널이 정해지지 않았어요. 봇이 초대된 모든 채널에서 코드 내용을 답해요."))
         }
         if let p = s.power, p.mode != "default", p.autologin_user == nil {
-            w.append(p.filevault_on ? "FileVault가 켜져 있어 재부팅 후 로그인 전까지 봇이 멈춰요."
-                                    : "자동 로그인이 꺼져 있어 재부팅 후 로그인 전까지 봇이 멈춰요.")
+            w.append(p.filevault_on ? L("FileVault가 켜져 있어 재부팅 후 로그인 전까지 봇이 멈춰요.")
+                                    : L("자동 로그인이 꺼져 있어 재부팅 후 로그인 전까지 봇이 멈춰요."))
         }
         return w
     }
@@ -79,14 +79,14 @@ final class AppModel: ObservableObject {
         Task {
             let (s, r) = await Backend.json(AppStatus.self, ["status", "--json"])
             guard let s else {
-                message = "상태를 읽지 못했어요: " + r.errorLine
+                message = L("상태를 읽지 못했어요: ") + r.errorLine
                 return
             }
             let wasRunning = health == .running
             status = s
             probeConsole()
             if wasRunning && health != .running && !userToggled {
-                notify("AskProject 봇이 멈췄어요", "자동으로 다시 띄우는 중이에요. 계속되면 로그를 확인하세요.")
+                notify(L("AskProject 봇이 멈췄어요"), L("자동으로 다시 띄우는 중이에요. 계속되면 로그를 확인하세요."))
             }
             userToggled = false
         }
@@ -96,20 +96,20 @@ final class AppModel: ObservableObject {
         let turnOn = health == .off || health == .unknown
         userToggled = true
         if isApp {
-            busy = turnOn ? "켜는 중" : "끄는 중"
+            busy = turnOn ? L("켜는 중") : L("끄는 중")
             Task {
                 do {
                     if turnOn {
                         _ = await Backend.run(["migrate"])  // 업데이트 뒤 첫 시작이면 스키마·설정을 먼저 올린다
                         let approval = try Agents.enableAll()
-                        message = approval ? "시스템 설정 → 로그인 항목에서 AskProject를 켜 주세요. 허용하면 바로 시작돼요."
-                                           : "켰어요. 봇이 슬랙에 연결되기까지 10초쯤 걸려요."
+                        message = approval ? L("시스템 설정 → 로그인 항목에서 AskProject를 켜 주세요. 허용하면 바로 시작돼요.")
+                                           : L("켰어요. 봇이 슬랙에 연결되기까지 10초쯤 걸려요.")
                     } else {
                         try Agents.disableAll()
-                        message = "껐어요. 잠자기 방지도 풀렸어요."
+                        message = L("껐어요. 잠자기 방지도 풀렸어요.")
                     }
                 } catch {
-                    message = "실패: \(error.localizedDescription)"
+                    message = L("실패: %@", error.localizedDescription)
                 }
                 busy = nil
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
@@ -117,9 +117,9 @@ final class AppModel: ObservableObject {
             }
             return
         }
-        perform(turnOn ? "켜는 중" : "끄는 중", ["host", turnOn ? "on" : "off"]) { r in
-            r.ok ? (turnOn ? "켰어요. 봇이 슬랙에 연결되기까지 10초쯤 걸려요." : "껐어요. 잠자기 방지도 풀렸어요.")
-                 : "실패: " + r.errorLine
+        perform(turnOn ? L("켜는 중") : L("끄는 중"), ["host", turnOn ? "on" : "off"]) { r in
+            r.ok ? (turnOn ? L("켰어요. 봇이 슬랙에 연결되기까지 10초쯤 걸려요.") : L("껐어요. 잠자기 방지도 풀렸어요."))
+                 : L("실패: ") + r.errorLine
         }
     }
 
@@ -133,55 +133,55 @@ final class AppModel: ObservableObject {
             // restart는 등록된 작업만 kickstart하고, 다른 레포에 등록돼 있으면 건드리지 않고 이유를 돌려준다.
             Task {
                 let r = await Backend.run(["host", "restart", "bot"])
-                if !r.ok { message = "봇을 재시작하지 않았어요: " + r.errorLine }
+                if !r.ok { message = L("봇을 재시작하지 않았어요: ") + r.errorLine }
             }
         }
     }
 
     func setProvider(_ mode: String) {
         guard mode != status?.provider, !isApp else { return }  // 앱(제품)에서는 구독 모드를 쓰지 않는다
-        perform("인증 경로 바꾸는 중", ["provider", mode]) { r in
-            r.ok ? (r.out.split(separator: "\n").first.map(String.init) ?? "바꿨어요.") : "전환 실패: " + r.errorLine
+        perform(L("인증 경로 바꾸는 중"), ["provider", mode]) { r in
+            r.ok ? (r.out.split(separator: "\n").first.map(String.init) ?? L("바꿨어요.")) : L("전환 실패: ") + r.errorLine
         }
     }
 
     func setPower(_ mode: String) {
-        perform("절전 모드 바꾸는 중", ["power", mode]) { r in
-            r.ok ? (r.out.split(separator: "\n").first.map(String.init) ?? "바꿨어요.") : "실패: " + r.errorLine
+        perform(L("절전 모드 바꾸는 중"), ["power", mode]) { r in
+            r.ok ? (r.out.split(separator: "\n").first.map(String.init) ?? L("바꿨어요.")) : L("실패: ") + r.errorLine
         }
     }
 
     func backupNow() {
-        perform("백업 중", ["backup"]) { r in
-            r.ok ? (r.out.split(separator: "\n").last.map(String.init) ?? "백업 완료") : "백업 실패: " + r.errorLine
+        perform(L("백업 중"), ["backup"]) { r in
+            r.ok ? (r.out.split(separator: "\n").last.map(String.init) ?? L("백업 완료")) : L("백업 실패: ") + r.errorLine
         }
     }
 
     func checkClaude() {
-        busy = "크레딧 확인 중"
+        busy = L("크레딧 확인 중")
         Task {
             let (s, r) = await Backend.json(AppStatus.self, ["status", "--json", "--check-claude"])
             busy = nil
             if let s {
                 status = s
                 claude = s.claude
-                message = s.claude?.ok == true ? "Claude API 키·크레딧 정상" : "Claude 호출 불가: \(s.claude?.problem ?? "-")"
+                message = s.claude?.ok == true ? L("Claude API 키·크레딧 정상") : L("Claude 호출 불가: %@", s.claude?.problem ?? "-")
             } else {
-                message = "확인 실패: " + r.errorLine
+                message = L("확인 실패: ") + r.errorLine
             }
         }
     }
 
     func diagnostics() {
-        busy = "진단 묶음 만드는 중"
+        busy = L("진단 묶음 만드는 중")
         Task {
             let (d, r) = await Backend.json(DiagnosticsResult.self, ["diagnostics"])
             busy = nil
             if let d {
                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: d.path)])
-                message = "진단 묶음을 만들었어요(비밀값은 가렸어요). 레포 이름·채널 ID는 들어 있으니 받는 사람을 확인하고 보내세요."
+                message = L("진단 묶음을 만들었어요(비밀값은 가렸어요). 레포 이름·채널 ID는 들어 있으니 받는 사람을 확인하고 보내세요.")
             } else {
-                message = "진단 묶음 실패: " + r.errorLine
+                message = L("진단 묶음 실패: ") + r.errorLine
             }
         }
     }
@@ -226,11 +226,11 @@ final class AppModel: ObservableObject {
             let state = await updateConsoleState()
             if state == .portTaken {
                 let port = status.flatMap { URL(string: $0.console_url)?.port }.map(String.init) ?? "18787"
-                message = "\(port) 포트를 다른 프로그램이 쓰고 있어 웹 콘솔이 뜨지 못했어요. 그 프로그램을 끈 뒤 콘솔을 다시 켜세요."
+                message = L("%@ 포트를 다른 프로그램이 쓰고 있어 웹 콘솔이 뜨지 못했어요. 그 프로그램을 끈 뒤 콘솔을 다시 켜세요.", port)
                 return
             }
             guard state == .up, let s = status else {
-                message = "웹 콘솔이 꺼져 있어요. '켜기'로 켜거나 잠시 뒤 다시 시도하세요."
+                message = L("웹 콘솔이 꺼져 있어요. '켜기'로 켜거나 잠시 뒤 다시 시도하세요.")
                 return
             }
             guard var comps = URLComponents(string: s.console_url + path) else { return }

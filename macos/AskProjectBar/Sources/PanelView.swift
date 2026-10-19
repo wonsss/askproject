@@ -34,7 +34,7 @@ struct JobRow: View {
     var body: some View {
         HStack(spacing: 6) {
             Circle().fill(color).frame(width: 7, height: 7)
-            Text(name).font(.callout)
+            Text(L(name)).font(.callout)
             Spacer()
             Text(text).font(.caption).foregroundStyle(.secondary)
         }
@@ -51,15 +51,15 @@ struct JobRow: View {
     }
 
     private var text: String {
-        if portTaken { return "포트를 다른 프로그램이 사용 중" }
+        if portTaken { return L("포트를 다른 프로그램이 사용 중") }
         if let up {
-            if up { return "실행 중" }
-            return job?.state == "running" ? "응답 없음" : "꺼짐"
+            if up { return L("실행 중") }
+            return job?.state == "running" ? L("응답 없음") : L("꺼짐")
         }
         switch job?.state {
-        case "running": return "실행 중"
-        case "waiting": return name == "백업" ? "매일 03:30" : "재시작 대기"
-        default: return "꺼짐"
+        case "running": return L("실행 중")
+        case "waiting": return name == "백업" ? L("매일 03:30") : L("재시작 대기")
+        default: return L("꺼짐")
         }
     }
 }
@@ -97,10 +97,10 @@ struct PanelView: View {
                         if let t = s.jobs["tunnel"], t.state != "off" { JobRow(name: "팀 공유", job: t) }
                     }
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                        StatCard(title: "오늘 질문", value: "\(s.today.questions)건")
-                        StatCard(title: "오늘 비용", value: money(s.today.cost))
-                        StatCard(title: "이번 주 비용", value: money(s.week.cost))
-                        StatCard(title: "확인 필요", value: "\(s.check)건", accent: s.check > 0 ? .orange : .primary) {
+                        StatCard(title: L("오늘 질문"), value: L("%ld건", s.today.questions))
+                        StatCard(title: L("오늘 비용"), value: money(s.today.cost))
+                        StatCard(title: L("이번 주 비용"), value: money(s.week.cost))
+                        StatCard(title: L("확인 필요"), value: L("%ld건", s.check), accent: s.check > 0 ? .orange : .primary) {
                             model.openConsole("/check")
                         }
                     }
@@ -108,27 +108,27 @@ struct PanelView: View {
                     footer(s)
                 }
             } else {
-                Text("상태를 불러오는 중…").foregroundStyle(.secondary)
+                Text(L("상태를 불러오는 중…")).foregroundStyle(.secondary)
             }
             if let m = model.message {
                 Text(m).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Divider()
             HStack {
-                Button("웹 콘솔") { model.openConsole() }
-                Button("로그") { model.openLogs() }
-                Button("설정") { WindowManager.shared.showSettings() }
+                Button(L("웹 콘솔")) { model.openConsole() }
+                Button(L("로그")) { model.openLogs() }
+                Button(L("설정")) { WindowManager.shared.showSettings() }
                 Spacer()
-                Menu("더 보기") {
-                    Button("설정 마법사 다시 열기") { WindowManager.shared.showWizard() }
-                    Button("데이터와 개인정보") { WindowManager.shared.showPrivacy() }
-                    Button("백업에서 복구…") { WindowManager.shared.showRestore() }
-                    Button("진단 묶음 만들기…") { model.diagnostics() }
+                Menu(L("더 보기")) {
+                    Button(L("설정 마법사 다시 열기")) { WindowManager.shared.showWizard() }
+                    Button(L("데이터와 개인정보")) { WindowManager.shared.showPrivacy() }
+                    Button(L("백업에서 복구…")) { WindowManager.shared.showRestore() }
+                    Button(L("진단 묶음 만들기…")) { model.diagnostics() }
                     if Updater.shared.available {
-                        Button("업데이트 확인…") { Updater.shared.checkForUpdates() }
+                        Button(L("업데이트 확인…")) { Updater.shared.checkForUpdates() }
                     }
                     Divider()
-                    Button("AskProject 종료") { NSApplication.shared.terminate(nil) }
+                    Button(L("AskProject 종료")) { NSApplication.shared.terminate(nil) }
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
@@ -142,10 +142,10 @@ struct PanelView: View {
 
     private var setupPrompt: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("아직 설정 전이에요").font(.headline)
-            Text("슬랙 앱, GitHub 토큰, Claude API 키를 차례로 연결하면 봇이 켜져요. 10분쯤 걸려요.")
+            Text(L("아직 설정 전이에요")).font(.headline)
+            Text(L("슬랙 앱, GitHub 토큰, Claude API 키를 차례로 연결하면 봇이 켜져요. 10분쯤 걸려요."))
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Button("설정 시작") { WindowManager.shared.showWizard() }.buttonStyle(.borderedProminent)
+            Button(L("설정 시작")) { WindowManager.shared.showWizard() }.buttonStyle(.borderedProminent)
         }
     }
 
@@ -154,7 +154,7 @@ struct PanelView: View {
             Image(systemName: model.health.symbol).foregroundStyle(model.health.color).font(.title2)
             VStack(alignment: .leading, spacing: 0) {
                 Text("AskProject").font(.headline)
-                Text(model.busy ?? "봇 \(model.health.label)" + (model.isApp ? "" : " · 개발 모드"))
+                Text(model.busy ?? L("봇 %@", model.health.label) + (model.isApp ? "" : L(" · 개발 모드")))
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
@@ -162,7 +162,7 @@ struct PanelView: View {
                 ProgressView().controlSize(.small)
             }
             if model.status?.configured != false {
-                Button(model.health == .off || model.health == .unknown ? "켜기" : "끄기") { model.toggle() }
+                Button(model.health == .off || model.health == .unknown ? L("켜기") : L("끄기")) { model.toggle() }
                     .buttonStyle(.borderedProminent)
                     .tint(model.health == .off ? .accentColor : .gray)
                     .disabled(model.busy != nil || model.protocolMismatch)
@@ -172,9 +172,9 @@ struct PanelView: View {
 
     private func recent(_ s: AppStatus) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("최근 질문").font(.caption).foregroundStyle(.secondary)
+            Text(L("최근 질문")).font(.caption).foregroundStyle(.secondary)
             if s.recent.isEmpty {
-                Text("아직 슬랙 질문이 없어요").font(.callout).foregroundStyle(.secondary)
+                Text(L("아직 슬랙 질문이 없어요")).font(.callout).foregroundStyle(.secondary)
             }
             ForEach(s.recent.prefix(5)) { q in
                 Button {
@@ -182,7 +182,7 @@ struct PanelView: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(q.question).font(.callout).lineLimit(1).truncationMode(.tail)
-                        Text("\(timeAgo(q.ts)) · \(q.route) · \(confidence(q.confidence)) · \(money(q.cost))"
+                        Text("\(timeAgo(q.ts)) · \(L(q.route)) · \(confidence(q.confidence)) · \(money(q.cost))"
                              + (q.flags.isEmpty ? "" : " · ⚠︎"))
                             .font(.caption2).foregroundStyle(.secondary)
                     }
@@ -198,8 +198,8 @@ struct PanelView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Image(systemName: "externaldrive").foregroundStyle(.secondary)
-                Text(s.last_backup.map { "백업 \(Int($0.age_hours.rounded()))시간 전" + ($0.offsite ? "" : " · 맥 밖 사본 없음") }
-                     ?? "백업 없음")
+                Text(s.last_backup.map { L("백업 %ld시간 전", Int($0.age_hours.rounded())) + ($0.offsite ? "" : L(" · 맥 밖 사본 없음")) }
+                     ?? L("백업 없음"))
                     .font(.caption)
                 Spacer()
                 Button {
@@ -207,8 +207,8 @@ struct PanelView: View {
                 } label: {
                     Image(systemName: "folder")
                 }
-                .controlSize(.small).help("백업 폴더 열기")
-                Button("지금 백업") { model.backupNow() }.controlSize(.small).disabled(model.busy != nil)
+                .controlSize(.small).help(L("백업 폴더 열기"))
+                Button(L("지금 백업")) { model.backupNow() }.controlSize(.small).disabled(model.busy != nil)
             }
             HStack(spacing: 6) {
                 Image(systemName: s.provider == "subscription" ? "terminal" : "key").foregroundStyle(.secondary)
@@ -216,7 +216,7 @@ struct PanelView: View {
                     // 개발 PoC 전용: 구독 로그인(타인에게 서비스 불가). 배포 앱에는 없다
                     Picker("", selection: Binding(get: { s.provider ?? "api" }, set: { model.setProvider($0) })) {
                         Text("API").tag("api")
-                        Text("구독").tag("subscription")
+                        Text(L("구독")).tag("subscription")
                     }
                     .pickerStyle(.segmented)
                     .frame(width: 104)
@@ -224,7 +224,7 @@ struct PanelView: View {
                 }
                 Text(authText(s)).font(.caption).lineLimit(1).truncationMode(.tail)
                 Spacer()
-                Button(s.provider == "subscription" ? "로그인 확인" : "크레딧 확인") { model.checkClaude() }
+                Button(s.provider == "subscription" ? L("로그인 확인") : L("크레딧 확인")) { model.checkClaude() }
                     .controlSize(.small).disabled(model.busy != nil)
             }
         }
@@ -232,13 +232,13 @@ struct PanelView: View {
 
     private func authText(_ s: AppStatus) -> String {
         if s.provider == "subscription" {
-            if s.claude_cli == false { return "claude CLI 없음" }
-            guard let c = model.claude else { return "로컬 구독 로그인" }
-            return c.ok ? "구독 로그인 정상" : "로그인 필요 (claude auth login)"
+            if s.claude_cli == false { return L("claude CLI 없음") }
+            guard let c = model.claude else { return L("로컬 구독 로그인") }
+            return c.ok ? L("구독 로그인 정상") : L("로그인 필요 (claude auth login)")
         }
-        if s.auth != "api_key" { return "API 키 없음" }
-        guard let c = model.claude else { return "Claude API 키" }
-        return c.ok ? "API 키 · 크레딧 정상" : "Claude 호출 불가"
+        if s.auth != "api_key" { return L("API 키 없음") }
+        guard let c = model.claude else { return L("Claude API 키") }
+        return c.ok ? L("API 키 · 크레딧 정상") : L("Claude 호출 불가")
     }
 }
 
@@ -250,8 +250,8 @@ func confidence(_ c: String?) -> String {
 
 func timeAgo(_ ts: Double) -> String {
     let m = Int((Date().timeIntervalSince1970 - ts) / 60)
-    if m < 1 { return "방금" }
-    if m < 60 { return "\(m)분 전" }
-    if m < 1440 { return "\(m / 60)시간 전" }
-    return "\(m / 1440)일 전"
+    if m < 1 { return L("방금") }
+    if m < 60 { return L("%ld분 전", m) }
+    if m < 1440 { return L("%ld시간 전", m / 60) }
+    return L("%ld일 전", m / 1440)
 }
