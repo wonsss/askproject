@@ -41,6 +41,11 @@ final class AppModel: ObservableObject {
         guard let s = status else { return [] }
         var w: [String] = []
         if protocolMismatch { w.append(L("앱과 백엔드 버전이 달라요. 앱을 다시 설치해 주세요.")) }
+        // 봇이 시작하다 멈춰 launchd가 다시 띄우길 기다리는 중이면, 백엔드가 남긴 원인 한 줄을 그대로 보여 준다
+        if let b = s.jobs["bot"], b.state == "waiting", let code = b.last_exit, code != "0",
+           let line = b.last_log, !line.isEmpty {
+            w.append(L("봇이 시작하지 못했어요: %@", line))
+        }
         if let c = s.host_conflict, !c.others.isEmpty {
             w.append(L("다른 맥(%@)에서 같은 슬랙 봇이 켜져 있어요. 한 대만 켜 두세요.", c.others.map(\.host_name).joined(separator: ", ")))
         }

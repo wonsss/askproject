@@ -14,6 +14,7 @@ extension L10n {
         "복구 직전": "Before restore",
         "사본 폴더": "Copy folder",
         "직접 고른 파일": "Chosen file",
+        "봇이 시작하지 못했어요: %@": "The bot couldn't start: %@",
         "앱과 백엔드 버전이 달라요. 앱을 다시 설치해 주세요.": "The app and backend versions don't match. Please reinstall the app.",
         "다른 맥(%@)에서 같은 슬랙 봇이 켜져 있어요. 한 대만 켜 두세요.": "The same Slack bot is running on another Mac (%@). Keep it on just one.",
         "시스템 설정 → 로그인 항목에서 AskProject를 허용해야 봇이 켜져요.": "Allow AskProject in System Settings → Login Items to start the bot.",
