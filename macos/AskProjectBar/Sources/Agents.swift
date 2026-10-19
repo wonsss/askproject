@@ -44,12 +44,15 @@ enum Agents {
     static func setTunnel(_ on: Bool) throws -> Bool {
         let s = service(tunnel)
         if on {
-            if s.status != .enabled { try s.register() }
+            let wasEnabled = s.status == .enabled
+            if !wasEnabled { try s.register() }  // RunAtLoad라 등록하면 바로 뜬다
             if s.status == .requiresApproval {
                 SMAppService.openSystemSettingsLoginItems()
                 return true
             }
-            restart(tunnel)  // 이미 켜져 있었다면 새 토큰으로 다시 붙는다
+            // 이미 켜져 있었을 때만 새 토큰으로 다시 붙인다. 막 띄운 작업을 kickstart -k로 죽이면
+            // ThrottleInterval(60초) 동안 재시작이 미뤄진다.
+            if wasEnabled { restart(tunnel) }
         } else if s.status == .enabled || s.status == .requiresApproval {
             try s.unregister()
         }
@@ -93,18 +96,20 @@ enum Agents {
         }
     }
 
+    /// 기다리지 않는다 — kickstart -k는 ThrottleInterval 동안 재시작을 기다리느라 최대 60초 멈출 수 있어, 메인 스레드를 막으면 앱이 굳는다.
     static func restart(_ name: String) {
-        launchctl(["kickstart", "-k", "gui/\(getuid())/\(label(name))"])
+        launchctl(["kickstart", "-k", "gui/\(getuid())/\(label(name))"], wait: false)
     }
 
     @discardableResult
-    private static func launchctl(_ args: [String]) -> Int32 {
+    private static func launchctl(_ args: [String], wait: Bool = true) -> Int32 {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         p.arguments = args
         p.standardOutput = FileHandle.nullDevice
         p.standardError = FileHandle.nullDevice
         do { try p.run() } catch { return -1 }  // 실행 못 한 Process의 terminationStatus는 예외로 앱을 죽인다
+        guard wait else { return 0 }
         p.waitUntilExit()
         return p.terminationStatus
     }
