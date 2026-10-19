@@ -190,3 +190,74 @@ async def test_pending_skipped_when_file_changed(store, repo_cfg, repo_dir, tool
     await learner.propose("domains")
     ws.file("domains").write_text(DOMAINS_TEMPLATE + "\n# 손으로 고침\n", encoding="utf-8")
     assert learner.plan("domains")["pending"] is None
+
+
+# ---------- 범위를 잘못 잡은 사례 (감사 로그 → 재료·검증) ----------
+
+CASE_DOMAINS = """\
+shared: []
+domains:
+  - id: bills
+    name: 의안
+    summary: 의안 상세
+    terms: [의안]
+    paths: ["apps/api/src/bills/**"]
+"""
+
+
+def seed_cases(store):
+    from askproject.store.db import QueryResult
+
+    def ask(question, scope, source="slack"):
+        qid = store.log_query(question, source)
+        store.log_result(qid, QueryResult(status="ok", scope=json.dumps(scope, ensure_ascii=False), route="agent"))
+        return qid
+
+    w = ask("의안 상세에서 웹뷰 준비 신호는?", {"domains": ["bills"]})
+    store.log_tool_call(w, "widen_scope", {"reason": "브리지 코드가 범위 밖"}, None)
+    store.log_tool_call(w, "read_code", {"path": "apps/web/lib/bridge.ts"}, None)
+    store.log_citation(w, "code", "apps/api/src/bills/bills.controller.ts", 1, 3, True, "")
+    p = ask("법안 목록 정렬 기준", {"domains": ["bills"], "forced": True, "reason": "사용자가 범위 선택"})
+    store.log_feedback(p, "U1", "down")
+    e = ask("eval 질문", {"domains": ["bills"]}, source="eval")
+    store.log_tool_call(e, "widen_scope", {"reason": "x"}, None)
+
+
+def test_scope_cases_from_audit_log(store):
+    seed_cases(store)
+    from askproject.learn import scope_cases
+
+    cases = {c["type"]: c for c in scope_cases(store, CASE_DOMAINS)}
+    assert set(cases) == {"widened", "picked", "down"}  # eval 질문은 뺀다
+    assert cases["widened"]["files"] == ["apps/web/lib/bridge.ts"]  # 잡은 도메인 안 파일은 뺀다
+    assert cases["widened"]["reason"] == "브리지 코드가 범위 밖"
+    assert cases["picked"]["domains"] == ["bills"]
+    assert cases["down"]["feedback"] == ["down"]
+
+
+async def test_propose_feeds_cases_and_checks_them(store, repo_cfg, repo_dir, tools, ws):
+    # 손으로 쓴 항목은 잠겨 '모두 적용 시'에도 그대로다 — 풀어 둔다
+    ws.file("domains").write_text(CASE_DOMAINS.replace("    paths:", "    locked: false\n    paths:"), encoding="utf-8")
+    seed_cases(store)
+    draft = {"domains": [{"id": "bills", "name": "의안", "terms": ["의안", "법안"],
+                          "paths": ["apps/api/src/bills/**", "apps/web/lib/**"]}]}
+    learner = make_learner(store, repo_cfg, repo_dir, tools, ws, draft)
+    plan = learner.plan("domains")
+    assert plan["materials"]["cases"] == {"widened": 1, "picked": 1, "down": 1}
+    p = await learner.propose("domains")
+    body = learner.runner.request.question
+    assert "[범위 넓힘]" in body and "apps/web/lib/bridge.ts" in body and "[사용자가 고름]" in body
+    cs = p["cases"]
+    assert cs["widened"] == {"total": 1, "before": 0, "after": 1}
+    assert cs["picked"] == {"total": 1, "before": 0, "after": 1}  # '법안'을 terms에 더해 풀림
+    assert cs["down"] == 1 and cs["unresolved"] == []
+
+
+async def test_redacted_questions_are_not_cases(store):
+    from askproject.learn import scope_cases
+    from askproject.store.db import REDACTED, QueryResult
+
+    qid = store.log_query(REDACTED, "slack")
+    store.log_result(qid, QueryResult(status="ok", scope=json.dumps({"domains": ["bills"]}), route="agent"))
+    store.log_feedback(qid, "U1", "down")
+    assert scope_cases(store, CASE_DOMAINS) == []

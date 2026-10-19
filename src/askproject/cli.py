@@ -576,6 +576,13 @@ def _print_proposal(p: dict) -> None:
     cov = p.get("coverage")
     if cov:
         print(f"  미분류 파일 비율 {cov['before']['uncovered_ratio']:.0%} → {cov['after']['uncovered_ratio']:.0%} (모두 적용 시)")
+    cs = p.get("cases")
+    if cs:
+        w, pk = cs["widened"], cs["picked"]
+        print(f"  범위 사례: 넓힘 {w['before']}/{w['total']} → {w['after']}/{w['total']} · "
+              f"되묻기 선택 {pk['before']}/{pk['total']} → {pk['after']}/{pk['total']} 풀림 (모두 적용 시) · 👎 {cs['down']}건")
+        for u in cs["unresolved"]:
+            print(f"      남음: {u['question'][:60]} ({', '.join(u['domains'])})")
     print(f"적용: askproject learn {p['kind']} --apply {p['id']} [--accept 키1,키2]  (생략하면 + ~ 항목)")
 
 

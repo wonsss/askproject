@@ -1,9 +1,10 @@
 """도메인 맵·용어 사전 학습: AI 초안 → 결정적 검증 → 미리 보기 → 항목별 승인 → 적용.
 
 - 초안: 에이전트(AgentRunner 포트)가 읽기 전용 도구(list_dir·code_search·find_screen 등)로 레포를 훑고 JSON을 낸다.
-  재료는 sync가 만든 인덱스(폴더 구조·구조 맵·문서 제목)와 감사 로그의 최근 질문이다. 쓰기·셸·외부 전송 도구는 없다.
+  재료는 sync가 만든 인덱스(폴더 구조·구조 맵·문서 제목)와 감사 로그의 최근 질문·범위를 잘못 잡은 사례(widen_scope·되묻기 선택·👎)다.
+  쓰기·셸·외부 전송 도구는 없다.
 - 검증(LLM 아님): paths 패턴이 인덱스 파일에 하나 이상 걸리는지(0이면 버림), 용어 식별자가 코드에 있는지(rg),
-  어느 도메인에도 안 걸리는 파일 비율, 기존 항목과의 차이(추가·변경·삭제).
+  어느 도메인에도 안 걸리는 파일 비율, 범위 사례가 풀리는지, 기존 항목과의 차이(추가·변경·삭제).
 - 적용: 승인된 항목만 병합해 원자적으로 쓴다. 쓰기 직전 기존 파일을 백업하고 머리말 주석을 유지한다.
   제안을 만든 뒤 파일이 바뀌었으면 적용하지 않는다(그사이 손으로 고친 내용을 덮지 않게).
 - 잠금: 학습이 쓴 항목은 지문을 data/learn/learned.json에 남긴다. 지문이 없거나 달라진 항목(사람이 쓰거나 고친 항목)과
@@ -211,8 +212,126 @@ def _section(title: str, lines: list[str], max_chars: int) -> str:
     return f"## {title}\n" + ("\n".join(out) if out else "(없음)")
 
 
-def build_materials(store: Store, repo: str, kind: str, current_text: str, domains_text: str = "") -> tuple[str, dict]:
+CASE_LIMIT = 30          # 종류별로 재료에 넣는 최근 사례 수
+CASE_SCAN = 2000         # 사례를 찾으려고 훑는 최근 질문 수
+NEGATIVE_FEEDBACK = ("down", "escalate")
+
+
+def _domains_index(domains_text: str) -> tuple[dict[str, dict], tuple[str, ...]]:
+    raw, items = current_items("domains", domains_text)
+    return items, tuple(str(x) for x in raw.get("shared") or [])
+
+
+def _globs(domains: dict[str, dict], ids: list[str]) -> tuple[str, ...]:
+    return tuple(p for i in ids for p in _strs((domains.get(i) or {}).get("paths"), 40, 200))
+
+
+def _term_hit(domain: dict | None, question: str) -> bool:
+    """스코핑의 DomainMap.term_matches와 같은 규칙: 도메인 용어의 단어(2자 이상)가 질문에 들어 있나."""
+    terms = _strs((domain or {}).get("terms"), 40, 30)
+    return any(w in question for t in terms for w in t.split() if len(w) >= 2)
+
+
+def scope_cases(store: Store, domains_text: str) -> list[dict]:
+    """감사 로그에서 범위를 잘못 잡은 사례(결정적, LLM 아님). 학습 재료와 검증에 쓴다.
+
+    - widened: 에이전트가 widen_scope로 범위를 넓혔다 — 범위 밖에서 읽거나 인용한 파일이 잡은 도메인 paths에 없다.
+    - picked: 되묻기에서 사용자가 도메인을 골랐다 — 스코핑이 그 도메인을 확신하지 못했다(질문 낱말이 terms에 없을 수 있다).
+    - down: 👎·확인 요청을 받은 답 — 범위가 틀렸을 수 있다(원인은 모름, 참고용).
+    eval 질문·가린 질문은 뺀다. 같은 종류에서 같은 질문은 한 번만 센다.
+    """
+    domains, shared = _domains_index(domains_text)
+    rows = store.execute(
+        "SELECT q.id, q.question, r.scope FROM queries q JOIN query_results r ON r.query_id=q.id "
+        "WHERE q.source != 'eval' AND q.question != ? AND r.scope IS NOT NULL ORDER BY q.ts DESC LIMIT ?",
+        (REDACTED, CASE_SCAN)).fetchall()
+    ids = [r["id"] for r in rows]
+    if not ids:
+        return []
+    marks = ",".join("?" * len(ids))
+    widened = {r["query_id"]: r["input_json"] for r in store.execute(
+        f"SELECT query_id, input_json FROM tool_calls WHERE tool='widen_scope' AND query_id IN ({marks})", ids)}
+    negative: dict[str, set[str]] = {}
+    for r in store.execute(f"SELECT query_id, value FROM feedback WHERE query_id IN ({marks})", ids):
+        if r["value"] in NEGATIVE_FEEDBACK:
+            negative.setdefault(r["query_id"], set()).add(r["value"])
+    seen: set[tuple[str, str]] = set()
+    counts = {"widened": 0, "picked": 0, "down": 0}
+    out: list[dict] = []
+
+    def add(kind: str, row, **extra) -> None:
+        question = row["question"].replace("\n", " ").strip()[:160]
+        if (kind, question) in seen or counts[kind] >= CASE_LIMIT:
+            return
+        seen.add((kind, question))
+        counts[kind] += 1
+        out.append({"type": kind, "query_id": row["id"], "question": question, **extra})
+
+    for row in rows:
+        try:
+            scope = json.loads(row["scope"])
+        except (TypeError, ValueError):
+            continue
+        scoped = [str(d) for d in scope.get("domains") or []]
+        if row["id"] in widened and scoped:
+            seen_files = [json.loads(r["input_json"]).get("path") for r in store.execute(
+                "SELECT input_json FROM tool_calls WHERE query_id=? AND tool='read_code' ORDER BY id", (row["id"],))]
+            seen_files += [r["path"] for r in store.execute(
+                "SELECT path FROM citations WHERE query_id=? AND source='code' AND verified=1 ORDER BY id", (row["id"],))]
+            globs = _globs(domains, scoped)
+            outside = [f for f in dict.fromkeys(str(p).removeprefix("./") for p in seen_files if p)
+                       if not (globs and matches(f, globs)) and not (shared and matches(f, shared))]
+            try:
+                reason = str(json.loads(widened[row["id"]]).get("reason") or "")[:120]
+            except (TypeError, ValueError):
+                reason = ""
+            add("widened", row, domains=scoped, files=outside[:6], reason=reason)
+        if scope.get("forced") and scoped and scope.get("reason") == "사용자가 범위 선택":
+            add("picked", row, domains=scoped)
+        if row["id"] in negative:
+            add("down", row, domains=scoped, feedback=sorted(negative[row["id"]]))
+    return out
+
+
+def _case_line(c: dict) -> str:
+    doms = ", ".join(c.get("domains") or []) or "(전체)"
+    if c["type"] == "widened":
+        files = ", ".join(c["files"]) or "(기록 없음)"
+        return f"[범위 넓힘] 「{c['question']}」 — 잡은 도메인: {doms} · 범위 밖에서 본 파일: {files}" + (
+            f" · 이유: {c['reason']}" if c.get("reason") else "")
+    if c["type"] == "picked":
+        return f"[사용자가 고름] 「{c['question']}」 — 고른 도메인: {doms}"
+    return f"[👎] 「{c['question']}」 — 잡은 도메인: {doms}"
+
+
+def check_cases(cases: list[dict], before: list[dict], after: list[dict], shared: list[str]) -> dict:
+    """사례가 도메인 맵으로 풀리는지(결정적): 지금 → 모두 적용 시.
+    widened는 범위 밖 파일이 모두 잡은 도메인 paths(·shared)에 걸리면, picked는 고른 도메인 terms가 질문에 걸리면 풀린 것으로 본다.
+    down은 원인을 알 수 없어 수만 센다."""
+    sides = {"before": {str(d.get("id")): d for d in before}, "after": {str(d.get("id")): d for d in after}}
+    shared_t = tuple(shared)
+
+    def solved(c: dict, doms: dict[str, dict]) -> bool:
+        if c["type"] == "widened":
+            globs = _globs(doms, c["domains"]) + shared_t
+            return bool(c["files"]) and all(matches(f, globs) for f in c["files"])
+        return any(_term_hit(doms.get(d), c["question"]) for d in c["domains"])
+
+    out: dict[str, Any] = {"down": sum(1 for c in cases if c["type"] == "down")}
+    unresolved = []
+    for kind in ("widened", "picked"):
+        group = [c for c in cases if c["type"] == kind and (kind == "picked" or c["files"])]
+        out[kind] = {"total": len(group), **{s: sum(1 for c in group if solved(c, d)) for s, d in sides.items()}}
+        unresolved += [{"type": kind, "question": c["question"], "domains": c["domains"]}
+                       for c in group if not solved(c, sides["after"])]
+    out["unresolved"] = unresolved[:8]
+    return out
+
+
+def build_materials(store: Store, repo: str, kind: str, current_text: str, domains_text: str = "",
+                    cases: list[dict] | None = None) -> tuple[str, dict]:
     """에이전트에게 줄 재료(결정적). (프롬프트 본문, 숫자 요약)."""
+    cases = cases or []
     files = [r["path"] for r in store.execute("SELECT path FROM files WHERE repo=? ORDER BY path", (repo,))]
     dirs = _dir_counts(files)
     struct = {k: store.execute("SELECT key, path FROM structure WHERE repo=? AND kind=? ORDER BY key", (repo, k)).fetchall()
@@ -226,12 +345,14 @@ def build_materials(store: Store, repo: str, kind: str, current_text: str, domai
         _section("API", [f"{r['key']} — {r['path']}" for r in struct["api"]], 6000),
         _section("문서 (출처 경로 「제목」)", [f"{r['source']} {r['path']} 「{r['title']}」" for r in docs], 5000),
         _section("최근 기획자 질문", [q.replace("\n", " ")[:120] for q in questions], 4000),
+        _section("범위를 잘못 잡은 사례 (감사 로그)", [_case_line(c) for c in cases], 5000),
         _section(f"지금 {FILES[kind]}", current_text.splitlines(), 4000),
     ]
     if kind == "glossary" and domains_text:
         parts.append(_section("지금 domains.yaml (용어 참고)", domains_text.splitlines(), 3000))
     stats = {"files": len(files), "routes": len(struct["route"]) + len(struct["manifest"]), "apis": len(struct["api"]),
-             "docs": len(docs), "questions": len(questions)}
+             "docs": len(docs), "questions": len(questions),
+             "cases": {k: sum(1 for c in cases if c["type"] == k) for k in ("widened", "picked", "down")}}
     return "\n\n".join(parts), stats
 
 
@@ -274,6 +395,9 @@ SYSTEM = {
   공용 타입, 관련 문서를 함께 담습니다. '**'처럼 레포 전체를 여는 패턴은 쓰지 않습니다.
 - 경로는 재료의 폴더 구조나 list_dir·code_search로 실제로 있는 것만 씁니다(검증에서 0건이면 버려집니다).
 - terms는 기획자가 질문에 쓸 한국어 낱말 3~8개, evidence는 이 도메인을 정한 근거 2~4개(화면 라우트·API·문서 경로).
+- 재료의 '범위를 잘못 잡은 사례'를 반영합니다. [범위 넓힘]은 잡은 도메인 paths에 '범위 밖에서 본 파일'이 빠졌다는 뜻입니다 —
+  그 파일이 그 도메인 기능이면 그 도메인 paths에, 아니면 맞는 도메인 paths에 넣습니다. [사용자가 고름]은 스코핑이 고른 도메인을
+  알아보지 못했다는 뜻이니 질문에 쓰인 기획자 낱말을 그 도메인 terms에 더합니다. [👎]는 원인을 모르니 참고만 합니다.
 - 도구는 꼭 필요한 만큼만(10회 안팎) 씁니다. 마지막 메시지에는 아래 형식의 JSON만 ```json 블록으로 냅니다.
 {schema}
 """,
@@ -287,6 +411,7 @@ SYSTEM = {
 - identifiers는 용어마다 1~5개, 코드에 실제로 있는 그대로의 철자(대소문자 포함)만 씁니다. code_search로 확인합니다
   (검증에서 코드에 없는 식별자는 버려집니다). 'id'·'data'처럼 너무 흔한 낱말은 쓰지 않습니다.
 - evidence는 식별자를 찾은 파일 경로 1~2개.
+- 재료의 '범위를 잘못 잡은 사례' 질문에 나온 기획 용어를 우선 다룹니다(코드 검색어로 바꾸지 못해 범위를 놓쳤을 수 있습니다).
 - 지금 파일에 있는 용어는 그대로 둘지 고칠지 판단해 같은 용어로 다시 냅니다.
 - 도구는 꼭 필요한 만큼만(10회 안팎) 씁니다. 마지막 메시지에는 아래 형식의 JSON만 ```json 블록으로 냅니다.
 {schema}
@@ -403,7 +528,7 @@ def _coverage(files: list[str], domains: list[dict], shared: list[str]) -> dict:
 
 
 def validate(kind: str, draft: list[dict], files: list[str], current: dict[str, Any], learned: dict,
-             count_ident=None, shared: list[str] | None = None) -> dict:
+             count_ident=None, shared: list[str] | None = None, cases: list[dict] | None = None) -> dict:
     """초안 → 미리 보기(items·rejected·coverage·summary). LLM을 쓰지 않는다."""
     items: list[dict] = []
     rejected: list[dict] = []
@@ -499,6 +624,8 @@ def validate(kind: str, draft: list[dict], files: list[str], current: dict[str, 
         result = [*locked_or_kept, *(proposed[i["key"]] for i in items if i["action"] in ("add", "change", "same"))]
         out["coverage"] = {"before": _coverage(files, cur, shared or []),
                            "after": _coverage(files, result, shared or [])}
+        if cases:
+            out["cases"] = check_cases(cases, cur, result, shared or [])
     return out
 
 
@@ -527,15 +654,16 @@ class Learner:
     def _files(self) -> list[str]:
         return [r["path"] for r in self.store.execute("SELECT path FROM files WHERE repo=? ORDER BY path", (self.repo.name,))]
 
-    def _inputs(self, kind: str) -> tuple[str, str, dict]:
+    def _inputs(self, kind: str) -> tuple[str, str, dict, list[dict]]:
         text = _read(self.workspace.file(kind))
         domains_text = _read(self.workspace.file("domains")) if kind == "glossary" else ""
-        body, stats = build_materials(self.store, self.repo.name, kind, text, domains_text)
-        return text, body, stats
+        cases = scope_cases(self.store, text if kind == "domains" else domains_text)
+        body, stats = build_materials(self.store, self.repo.name, kind, text, domains_text, cases)
+        return text, body, stats, cases
 
     def plan(self, kind: str) -> dict:
         """--dry-run: API 호출 없이 재료 크기·예상 비용·다시 학습 힌트."""
-        text, body, stats = self._inputs(kind)
+        text, body, stats, _ = self._inputs(kind)
         prompt_chars = len(SYSTEM[kind]) + len(SCHEMA[kind]) + len(body)
         ready = stats["files"] > 0
         out = {
@@ -565,7 +693,7 @@ class Learner:
         return f"마지막 학습 뒤 새 폴더 {len(new)}개가 생겼어요({', '.join(new[:3])}{' …' if len(new) > 3 else ''}). 다시 학습해 볼까요?"
 
     async def propose(self, kind: str) -> dict:
-        text, body, stats = self._inputs(kind)
+        text, body, stats, cases = self._inputs(kind)
         if not stats["files"]:
             raise LearnError("아직 인덱스가 없어요. 먼저 동기화하세요(askproject sync).")
         session = ToolSession()
@@ -584,7 +712,7 @@ class Learner:
         files = self._files()
         counter = make_rg_counter(self.repo_path, self.repo) if kind == "glossary" else None
         shared = list(_read_shared(self.workspace)) if kind == "domains" else []
-        checked = validate(kind, draft, files, current, learned, counter, shared)
+        checked = validate(kind, draft, files, current, learned, counter, shared, cases)
         pid = time.strftime("%Y%m%d-%H%M%S") + f"-{kind}-{secrets.token_hex(3)}"
         proposal = {
             "ok": True, "id": pid, "kind": kind, "created_at": time.time(),
