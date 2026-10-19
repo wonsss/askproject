@@ -25,6 +25,7 @@ extension L10n {
         "맥 운영": "Mac hosting",
         "도메인·용어": "Domains & terms",
         "정보": "About",
+        "개발 모드라 값은 레포의 .env에 저장돼요. 바꿀 항목만 새로 붙여넣고 저장하세요. 비워 둔 칸은 저장된 값을 그대로 써요.": "In development mode, values are saved to the repo's .env. Paste only what you want to change and save. Empty fields keep the saved value.",
         "값은 이 맥의 Keychain에 저장돼요. 바꿀 항목만 새로 붙여넣고 저장하세요. 비워 둔 칸은 저장된 값을 그대로 써요.": "Values are stored in this Mac's Keychain. Paste only what you want to change, then save. Empty fields keep their saved values.",
         "슬랙": "Slack",
         "슬랙 앱을 다시 설치했거나 토큰을 재발급했다면 여기에 새로 넣어 주세요.": "If you reinstalled the Slack app or reissued the tokens, enter the new ones here.",

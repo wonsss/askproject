@@ -195,8 +195,18 @@ final class SettingsModel: ObservableObject {
         shareCheck = nil
     }
 
-    /// 연결 탭의 서비스별 확인(`setup check slack|github|claude`). 저장된 값으로 확인한다.
+    static let checkKeys = ["slack": ["ASKPROJECT_SLACK_BOT_TOKEN", "ASKPROJECT_SLACK_APP_TOKEN"],
+                            "github": ["ASKPROJECT_GITHUB_TOKEN"], "claude": ["ANTHROPIC_API_KEY"]]
+
+    /// 연결 탭의 서비스별 확인(`setup check slack|github|claude`). 백엔드는 저장된 값으로 확인하므로,
+    /// 칸에 새로 넣고 아직 저장하지 않은 값이 있으면 먼저 저장한다(안 그러면 예전 값을 확인해 헷갈린다)
     func check(_ target: String) async {
+        let pending = secrets.filter { Self.checkKeys[target, default: []].contains($0.key) && !$0.value.isEmpty }
+            .mapValues { $0.trimmingCharacters(in: .whitespaces) }
+        if !pending.isEmpty {
+            await save(secrets: pending)
+            guard note?.ok == true else { return }
+        }
         checking = target
         let (r, out) = await Backend.json(CheckResult.self, ["setup", "check", target])
         checking = nil
@@ -265,7 +275,7 @@ final class SettingsModel: ObservableObject {
         let ok = saved ?? (restartBot ? L("저장했어요. 실행 중인 봇에 적용하려고 다시 시작해요.") : L("저장했어요."))
         note = CheckResult(ok: r.ok, detail: r.ok ? ok : (r.error ?? L("저장 실패")), step: nil)
         if r.ok {
-            self.secrets = [:]
+            for k in secrets.keys { self.secrets[k] = nil }  // 저장한 칸만 비운다(다른 칸에 넣던 값은 그대로)
             if restartBot { AppModel.shared.restartBotIfRunning() }
             await load()
         }
@@ -325,7 +335,9 @@ struct SettingsView: View {
 
     private var connections: some View {
         SettingsPage {
-            Text(L("값은 이 맥의 Keychain에 저장돼요. 바꿀 항목만 새로 붙여넣고 저장하세요. 비워 둔 칸은 저장된 값을 그대로 써요."))
+            Text(Backend.isBundled
+                 ? L("값은 이 맥의 Keychain에 저장돼요. 바꿀 항목만 새로 붙여넣고 저장하세요. 비워 둔 칸은 저장된 값을 그대로 써요.")
+                 : L("개발 모드라 값은 레포의 .env에 저장돼요. 바꿀 항목만 새로 붙여넣고 저장하세요. 비워 둔 칸은 저장된 값을 그대로 써요."))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 
             connectionGroup(L("슬랙"), L("슬랙 앱을 다시 설치했거나 토큰을 재발급했다면 여기에 새로 넣어 주세요."), check: "slack") {
