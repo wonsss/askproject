@@ -194,6 +194,53 @@ def test_check_ignores_other_cloudflared_without_our_state_file(monkeypatch, tmp
     assert not r["ok"] and "연결되지 않았어요" in r["detail"]
 
 
+_CONFIG = ('2026-10-19T14:26:52Z INF Updated to new configuration config="{\\"ingress\\":[{\\"hostname\\":'
+           '\\"ask.example.com\\", \\"service\\":\\"http://127.0.0.1:8787\\"}, {\\"service\\":\\"http_status:404\\"}], '
+           '\\"warp-routing\\":{\\"enabled\\":false}}" version=1\n')
+
+
+def test_parse_ingress_from_cloudflared_log():
+    assert tunnel.parse_ingress(_CONFIG) == [{"hostname": "ask.example.com", "service": "http://127.0.0.1:8787"},
+                                             {"service": "http_status:404"}]
+    assert tunnel.parse_ingress("INF Registered tunnel connection") is None
+
+
+def test_run_records_ingress_in_state(monkeypatch, tmp_path):
+    seen = {}
+
+    class Proc:
+        pid = os.getpid()
+
+        def __init__(self):
+            self.stdout = iter(["INF Registered tunnel connection\n", _CONFIG])
+
+        def wait(self):
+            seen["state"] = json.loads((tmp_path / "tunnel.json").read_text())
+            return 0
+
+    monkeypatch.setattr(tunnel.subprocess, "Popen", lambda cmd, env, **kw: Proc())
+    monkeypatch.setattr(tunnel, "cloudflared_path", lambda: "/bin/cloudflared")
+    assert tunnel.run(_shared(data_dir=tmp_path)) == 0
+    assert seen["state"]["ingress"][0]["service"] == "http://127.0.0.1:8787"
+
+
+@pytest.mark.parametrize("service, ok, msg", [
+    ("http://127.0.0.1:18787", True, "보호"),
+    ("http://localhost:18787", True, "보호"),
+    ("http://127.0.0.1:8787", False, "Service URL을 http://127.0.0.1:18787로"),  # 같은 맥의 다른 서버로 감
+    (None, False, "라우트에 ask.example.com가 없어요"),
+])
+def test_check_compares_route_with_console_port(monkeypatch, tmp_path, service, ok, msg):
+    """Access 로그인은 라우트 앞에서 일어나 포트가 틀려도 통과해 보인다 — 라우트의 Service URL을 콘솔 포트와 비교한다."""
+    monkeypatch.setattr(tunnel, "cloudflared_path", lambda: "/bin/cloudflared")
+    rules = [{"hostname": "ask.example.com", "service": service}] if service else [{"hostname": "x.example.com", "service": "http://127.0.0.1:1"}]
+    (tmp_path / "tunnel.json").write_text(json.dumps({"pid": os.getpid(), "metrics": "127.0.0.1:1",
+                                                      "ingress": rules + [{"service": "http_status:404"}]}))
+    (tmp_path / "console.json").write_text(json.dumps({"pid": os.getpid(), "port": 18787}))
+    r = tunnel.check(_shared(data_dir=tmp_path), client=_client())
+    assert r["ok"] is ok and msg in r["detail"], r["detail"]
+
+
 def test_check_finds_tunnel_started_by_other_mode(monkeypatch, tmp_path):
     """개발 앱의 연결 확인이 배포 앱이 띄운 터널(같은 launchd 레이블, 다른 data 폴더)도 알아본다."""
     from askproject import paths

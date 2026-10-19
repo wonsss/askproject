@@ -70,15 +70,69 @@ def _state_candidates(s: Settings) -> list[Path]:
     return seen
 
 
-def _running_metrics(s: Settings) -> str | None:
+def _running_state(s: Settings) -> dict | None:
+    """떠 있는 터널의 상태 {pid, metrics, ingress?}. 없으면 None."""
     for path in _state_candidates(s):
         try:
             state = json.loads(path.read_text(encoding="utf-8"))
             os.kill(int(state["pid"]), 0)
-            return state["metrics"]
+            if state.get("metrics"):
+                return state
         except (OSError, ValueError, KeyError, TypeError):
             continue
     return None
+
+
+def _running_metrics(s: Settings) -> str | None:
+    state = _running_state(s)
+    return state["metrics"] if state else None
+
+
+_CONFIG_LINE = re.compile(r'Updated to new configuration config="(.*)" version=')
+
+
+def parse_ingress(line: str) -> list[dict] | None:
+    """대시보드가 내려 준 라우트(cloudflared 'Updated to new configuration' 줄의 ingress). 그 줄이 아니면 None."""
+    m = _CONFIG_LINE.search(line)
+    if not m:
+        return None
+    try:
+        rules = json.loads(m.group(1).replace('\\"', '"')).get("ingress")
+    except (ValueError, AttributeError):
+        return None
+    return [r for r in rules if isinstance(r, dict)] if isinstance(rules, list) else None
+
+
+def _console_port(s: Settings) -> int:
+    """실제로 떠 있는 콘솔 포트(data/console.json), 없으면 설정 포트."""
+    from askproject.host import preferred_console_port
+
+    try:
+        return int(json.loads((s.data_dir / "console.json").read_text(encoding="utf-8"))["port"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return preferred_console_port(s)
+
+
+def route_problem(ingress: list[dict], host: str, port: int) -> str | None:
+    """공개 주소의 라우트가 이 맥의 웹 콘솔을 가리키는지. Access 로그인은 라우트 앞에서 일어나서, 포트가 틀려도
+    공개 주소는 Access 로그인으로 넘어간다 — 로그인한 뒤에야 엉뚱한 서버(같은 맥의 다른 개발 서버)가 응답한다."""
+    from urllib.parse import urlsplit
+
+    want = f"http://127.0.0.1:{port}"
+    rule = next((r for r in ingress if (r.get("hostname") or "").lower() == host.lower()), None)
+    if rule is None:
+        return (f"터널 라우트에 {host}가 없어요 — 대시보드 터널 → Routes에서 Published application으로 "
+                f"{host}를 만들고 Service URL을 {want}로 두세요")
+    service = str(rule.get("service", ""))
+    u = urlsplit(service)
+    try:
+        same = u.scheme in ("http", "https") and u.hostname in ("127.0.0.1", "localhost") and u.port == port
+    except ValueError:
+        same = False
+    if same:
+        return None
+    return (f"{host}가 {service}로 연결돼 있는데 웹 콘솔은 {want}에 있어요 — 대시보드 터널 → Routes에서 "
+            f"{host}의 Service URL을 {want}로 바꾸세요")
 
 
 def parse_token(token: str) -> str:
@@ -164,7 +218,8 @@ def run(s: Settings) -> int:
     if missing(s):
         log.info("아직 비어 있음: %s — 채우기 전까지 콘솔은 공개 주소 요청을 거절해요", ", ".join(missing(s)))
     proc = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    paths.atomic_write(_state_path(s), json.dumps({"pid": proc.pid, "metrics": metrics}))
+    state: dict = {"pid": proc.pid, "metrics": metrics}
+    paths.atomic_write(_state_path(s), json.dumps(state))
 
     def stop(signum, _frame):
         proc.send_signal(signum)
@@ -175,6 +230,10 @@ def run(s: Settings) -> int:
     try:
         for line in proc.stdout:
             log.info("cloudflared: %s", line.rstrip()[:500])
+            ingress = parse_ingress(line)
+            if ingress is not None:  # 대시보드에서 라우트를 고칠 때마다 새로 내려온다 — 연결 확인이 비교한다
+                state["ingress"] = ingress
+                paths.atomic_write(_state_path(s), json.dumps(state))
         return proc.wait()
     finally:
         _state_path(s).unlink(missing_ok=True)
@@ -228,7 +287,8 @@ def check(s: Settings, client=None) -> dict:
     host, team = s.console_public_host, s.cf_access_team_domain
     c = client or httpx.Client(timeout=10, follow_redirects=False)
     try:
-        metrics, connections = _running_metrics(s), 0
+        state = _running_state(s)
+        metrics, connections = (state or {}).get("metrics"), 0
         if metrics:
             try:
                 ready = c.get(f"http://{metrics}/ready")
@@ -238,6 +298,11 @@ def check(s: Settings, client=None) -> dict:
         if not connections:
             return fail("터널이 이 맥에서 Cloudflare에 연결되지 않았어요 — 팀 공유를 켜고 30초 뒤 다시 확인하세요 "
                         "(로그: tunnel.log)")
+        # 라우트는 터널이 대시보드에서 받아 상태 파일에 적는다. 이 기록 전에 띄운 터널이면 비교하지 않는다
+        if state and state.get("ingress") is not None:
+            problem = route_problem(state["ingress"], host, _console_port(s))
+            if problem:
+                return fail(problem)
         try:
             certs = c.get(f"https://{team}/cdn-cgi/access/certs")
             if certs.status_code != 200 or not certs.json().get("keys"):

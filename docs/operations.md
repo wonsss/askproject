@@ -189,7 +189,7 @@ uv run askproject redact <query_id> --reason "질문에 실명·연락처 포함
 | 저장 위치 | 주소·팀 도메인·AUD는 `settings.env`(`config set`), 터널 토큰은 Keychain `ASKPROJECT_CLOUDFLARE_TUNNEL_TOKEN` |
 | 상시 실행 | SMAppService 에이전트 `com.askproject.tunnel`(`askproject tunnel`). 봇 켜기·끄기와 따로 움직이고, 토큰이 없으면 띄우지 않고 끝난다(나머지 값은 없어도 뜬다) |
 | 격리 | 빈 `--config`(데이터 폴더의 `cloudflared.yml`)를 줘서 `~/.cloudflared/config.yml`을 읽지 않는다. 토큰은 인자가 아니라 `TUNNEL_TOKEN` 환경변수(다른 환경변수는 넘기지 않는다 — cloudflared가 시작 로그에 환경변수를 찍고 `TUNNEL_TOKEN`만 가린다) |
-| 연결 확인 | `askproject setup check tunnel`: 빈 항목 → 토큰 형식 → cloudflared → 이 터널의 `/ready` 연결 수(실행마다 빈 포트를 골라 `data/tunnel.json`에 적는다 — 따로 띄운 cloudflared와 섞이지 않게) → Access 팀 키 → 공개 주소가 Access 로그인으로 넘어가는지(넘겨 주는 팀 도메인이 저장 값과 같은지도). 로그인 없이 응답하면(Access 앱 누락) 실패로 알린다 |
+| 연결 확인 | `askproject setup check tunnel`: 빈 항목 → 토큰 형식 → cloudflared → 이 터널의 `/ready` 연결 수(실행마다 빈 포트를 골라 `data/tunnel.json`에 적는다 — 따로 띄운 cloudflared와 섞이지 않게) → 대시보드 라우트의 Service URL이 웹 콘솔 포트를 가리키는지(터널이 cloudflared의 'Updated to new configuration' 줄에서 ingress를 읽어 `tunnel.json`에 적는다 — Access 로그인은 라우트 앞에서 일어나 포트가 틀려도 통과해 보이고, 로그인 뒤 같은 맥의 다른 서버가 응답한다) → Access 팀 키 → 공개 주소가 Access 로그인으로 넘어가는지(넘겨 주는 팀 도메인이 저장 값과 같은지도). 로그인 없이 응답하면(Access 앱 누락) 실패로 알린다 |
 | 로그 | `~/Library/Logs/AskProject/tunnel.log` |
 | 끄기 | 앱에서 **팀 공유 켜기**를 끈다. 완전 철거는 대시보드에서 터널·Access 앱 삭제 |
 | 앱 종료 | 메뉴 막대 앱을 끄면 터널을 내린다(`applicationWillTerminate`, 켜 둔 설정은 남김). 앱을 다시 켜면 띄운다. 봇·콘솔·백업은 앱과 상관없이 계속 돈다 |
