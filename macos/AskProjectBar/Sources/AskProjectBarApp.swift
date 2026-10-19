@@ -15,6 +15,8 @@ final class WindowManager {
     /// 창마다 제목을 만드는 함수. 언어를 바꾸면 열린 창 제목을 다시 단다.
     private var titles: [ObjectIdentifier: (NSWindow, () -> String)] = [:]
     private var langWatch: AnyCancellable?
+    /// 창 닫힘 감시(닫히면 Dock 표시 여부를 다시 정한다)
+    private var closeWatch: [ObjectIdentifier: NSObjectProtocol] = [:]
 
     private init() {
         langWatch = Localizer.shared.$choice.dropFirst().receive(on: DispatchQueue.main).sink { [weak self] _ in
@@ -54,18 +56,47 @@ final class WindowManager {
         settings = show(settings, title: { L("AskProject 설정") }, view: SettingsView(tab: tab))
     }
 
+    /// Dock 아이콘을 누르면 열린 창을 앞으로 가져온다.
+    func bringToFront() {
+        for (w, _) in titles.values where isOpen(w) {
+            if w.isMiniaturized { w.deminiaturize(nil) }
+            w.orderFront(nil)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func isOpen(_ w: NSWindow) -> Bool { w.isVisible || w.isMiniaturized }
+
+    /// 창이 하나라도 열려 있으면 Dock·Cmd+Tab에 나타나게 한다(다른 앱 뒤로 가도 다시 꺼낼 수 있게).
+    /// 마지막 창이 닫히면 메뉴 막대 전용으로 돌아간다.
+    private func updateActivationPolicy() {
+        let policy: NSApplication.ActivationPolicy = titles.values.contains { isOpen($0.0) } ? .regular : .accessory
+        if NSApp.activationPolicy() != policy { NSApp.setActivationPolicy(policy) }
+    }
+
     private func show<V: View>(_ existing: NSWindow?, title: @escaping () -> String, view: V) -> NSWindow {
-        if let w = existing, w.isVisible {
+        if let w = existing, isOpen(w) {
+            if w.isMiniaturized { w.deminiaturize(nil) }
             w.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return w
         }
         let w = NSWindow(contentViewController: NSHostingController(rootView: LocalizedRoot { view }))
         w.title = title()
-        titles = titles.filter { $0.value.0.isVisible }
-        titles[ObjectIdentifier(w)] = (w, title)
+        titles = titles.filter { isOpen($0.value.0) }
+        let id = ObjectIdentifier(w)
+        titles[id] = (w, title)
         w.styleMask = [.titled, .closable, .miniaturizable]
         w.isReleasedWhenClosed = false
+        closeWatch[id] = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if let token = self.closeWatch.removeValue(forKey: id) { NotificationCenter.default.removeObserver(token) }
+                self.titles.removeValue(forKey: id)
+                self.updateActivationPolicy()
+            }
+        }
+        updateActivationPolicy()
         w.center()
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -74,6 +105,12 @@ final class WindowManager {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    @MainActor
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        WindowManager.shared.bringToFront()
+        return false
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard Backend.isBundled else { return }  // 개발 앱은 레포 경로에서 그대로 돈다
         if offerMoveToApplications() { return }
