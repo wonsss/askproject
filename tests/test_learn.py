@@ -261,3 +261,19 @@ async def test_redacted_questions_are_not_cases(store):
     store.log_result(qid, QueryResult(status="ok", scope=json.dumps({"domains": ["bills"]}), route="agent"))
     store.log_feedback(qid, "U1", "down")
     assert scope_cases(store, CASE_DOMAINS) == []
+
+
+def test_cli_builds_learner_with_repo_set(tmp_path):
+    # 레포 여러 개 지원 뒤 위치 인자가 밀려 workspace가 빠지던 회귀(앱 '학습하기'가 TypeError)
+    from types import SimpleNamespace
+
+    from askproject.cli import _learner
+    from askproject.config import RepoConfig
+    from askproject.repo_set import RepoSet
+
+    s = SimpleNamespace(config_dir=tmp_path, data_dir=tmp_path, backup_dir=tmp_path, model_large="m",
+                        agent_effort_large="", llm_provider="api")
+    service = SimpleNamespace(runner="R", code_tools="C", structure_tools=None, doc_tools=None)
+    repos = RepoSet.from_repos([RepoConfig(name="svc", url="https://github.com/acme/svc")], tmp_path)
+    lr = _learner(SimpleNamespace(settings=s, store="S", repos=repos, service=service))
+    assert lr.runner == "R" and lr.code_tools == "C" and isinstance(lr.workspace, Workspace)

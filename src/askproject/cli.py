@@ -578,8 +578,8 @@ def _learner(c):
     from askproject.learn import Learner, Workspace
 
     s = c.settings
-    return Learner(c.store, c.repos, c.service.runner, c.service.code_tools,
-                   Workspace(s.config_dir, s.data_dir, s.backup_dir), model=s.model_large,
+    return Learner(c.store, c.repos, repo_path=None, runner=c.service.runner, code_tools=c.service.code_tools,
+                   workspace=Workspace(s.config_dir, s.data_dir, s.backup_dir), model=s.model_large,
                    structure_tools=c.service.structure_tools, doc_tools=c.service.doc_tools,
                    effort=s.agent_effort_large or None, provider=s.llm_provider)
 
