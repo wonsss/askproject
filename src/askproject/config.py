@@ -61,4 +61,7 @@ def load_repos(config_dir: Path) -> list[RepoConfig]:
         )
     if not repos:
         raise ValueError("config/repos.yaml에 레포가 없습니다.")
+    names = [r.name for r in repos]
+    if len(set(names)) != len(names):
+        raise ValueError(f"config/repos.yaml에 같은 레포 이름이 여러 번 있어요: {names}")
     return repos

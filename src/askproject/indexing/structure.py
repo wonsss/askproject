@@ -244,6 +244,31 @@ def build_structure(store: Store, repo: str, root: Path, files: list[str], cfg: 
     cfg = cfg or StructureConfig()
     api = link_api(extract_client_endpoints(root, cfg), extract_controllers(root, cfg))
     entries = [*api, *extract_routes(root, cfg), *extract_manifest(root, cfg), *extract_bridge(root, cfg, files)]
+    return _save(store, repo, api, entries)
+
+
+def build_structure_multi(store: Store, repos, parts: list[tuple]) -> dict[str, int]:
+    """여러 레포: 레포마다 뽑아 경로 앞에 레포 이름을 붙인 뒤, API는 레포를 가로질러 잇는다
+    (예: 웹 레포의 api-client 호출 → 서버 레포의 컨트롤러). parts: (RepoConfig, 체크아웃 경로, 파일 목록, 규칙).
+    """
+    clients, controllers, others = [], [], []
+
+    def prefixed(items: list[StructureEntry], prefix: str) -> list[StructureEntry]:
+        for e in items:
+            e.path = prefix + e.path
+        return items
+
+    for repo, root, files, cfg in parts:
+        prefix = repos.vpath(repo, "")
+        clients += prefixed(extract_client_endpoints(root, cfg), prefix)
+        controllers += prefixed(extract_controllers(root, cfg), prefix)
+        others += prefixed([*extract_routes(root, cfg), *extract_manifest(root, cfg), *extract_bridge(root, cfg, files)],
+                           prefix)
+    api = link_api(clients, controllers)
+    return _save(store, repos.structure_key, api, [*api, *others])
+
+
+def _save(store: Store, repo: str, api: list[StructureEntry], entries: list[StructureEntry]) -> dict[str, int]:
     store.replace_structure(repo, [(e.kind, e.key, e.label, e.path, e.line, json.dumps(e.extra, ensure_ascii=False))
                                    for e in entries])
     counts: dict[str, int] = {}

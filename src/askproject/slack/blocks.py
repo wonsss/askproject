@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from askproject.pipeline.answer import Answer, Citation
+from askproject.repo_set import format_commit
 
 CONFIDENCE_LABEL = {"high": "🟢 확신도 높음", "medium": "🟡 확신도 보통", "low": "🔴 확신도 낮음 · 확인 필요"}
 SOURCE_LABEL = {"code": "코드", "doc": "문서", "notion": "노션", "slack": "슬랙"}
@@ -104,7 +105,7 @@ def answer_blocks(a: Answer, note: str | None = None) -> list[dict]:
     meta.append(CONFIDENCE_LABEL.get(a.confidence, a.confidence))
     if a.domain_names:
         meta.append(" · ".join(a.domain_names))
-    meta.append(f"코드 기준 main@{a.commit[:7]}")
+    meta.append(f"코드 기준 {format_commit(a.commit)}")
     if a.provider:
         meta.append(PROVIDER_LABEL.get(a.provider, a.provider))
     blocks: list[dict] = [

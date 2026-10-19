@@ -27,6 +27,7 @@ from askproject.pipeline.wireframe import (
     wireframe_filename,
 )
 from askproject.store.db import QueryResult, Store
+from askproject.repo_set import RepoSet
 from askproject.tools.code_tools import CodeTools, ToolSession
 from askproject.tools.doc_tools import DocTools
 from askproject.tools.structure_tools import StructureTools
@@ -176,14 +177,16 @@ def evidence_notes(text: str) -> dict[tuple[str, int], str]:
 
 
 class AnswerService:
-    def __init__(self, store: Store, repo: RepoConfig, repo_path: Path, runner: AgentRunner, code_tools: CodeTools,
+    def __init__(self, store: Store, repo: RepoConfig | RepoSet, repo_path: Path | None, runner: AgentRunner,
+                 code_tools: CodeTools,
                  max_turns: int = 12, max_budget_usd: float | None = None, *, scoper: Scoper | None = None,
                  domain_map: DomainMap | None = None, doc_tools: DocTools | None = None,
                  structure_tools: StructureTools | None = None, models: dict[str, str] | None = None,
                  efforts: dict[str, str | None] | None = None, provider: str = "api"):
         self.store = store
-        self.repo = repo
-        self.repo_path = repo_path
+        self.repos = repo if isinstance(repo, RepoSet) else RepoSet.single(repo, repo_path)
+        self.repo = self.repos.primary
+        self.repo_path = self.repos.root
         self.runner = runner
         self.code_tools = code_tools
         self.max_turns = max_turns
@@ -199,11 +202,19 @@ class AnswerService:
     # ---------- 도구 ----------
     def _overview(self) -> str:
         parts = []
-        for name in self.repo.context_files:
-            p = self.repo_path / name
-            if p.is_file() and self.code_tools.filter.allowed(name):
-                parts.append(p.read_text(encoding="utf-8", errors="replace"))
+        rs = self.repos
+        for repo in rs.repos:
+            for name in repo.context_files:
+                p = rs.checkout(repo) / name
+                if p.is_file() and rs.filter(repo).allowed(name):
+                    text = p.read_text(encoding="utf-8", errors="replace")
+                    parts.append(f"### {repo.name}/{name}\n{text}" if rs.multi else text)
         return "\n\n".join(parts)[:OVERVIEW_MAX_CHARS]
+
+    def _repo_lines(self, commit: str) -> list[tuple[str, str, str, str]]:
+        """여러 레포: (이름, 설명, ref, 커밋) 목록."""
+        shas = self.repos.commits(commit)
+        return [(r.name, r.description, r.ref, shas.get(r.name, "unknown")) for r in self.repos.repos]
 
     def _tools(self, query_id: str, session: ToolSession) -> list[ToolSpec]:
         ct, store = self.code_tools, self.store
@@ -283,14 +294,14 @@ class AnswerService:
                     continue
                 seen.add((path, start, end))
                 note = line[m.end():].strip(" -—:·")
-                code = self.store.file_info(self.repo.name, path)
+                code = self.repos.file_info(self.store, path)
                 doc = self.store.doc_file(path)
                 if doc and doc["source"] != "repo":
                     source, total, url = doc["source"], doc["lines"], doc["url"] or ""
                 elif code or doc:
                     source = "doc" if path.endswith(".md") else "code"
                     total = code["lines"] if code else doc["lines"]
-                    url = f"{self.repo.web_base}/blob/{commit}/{path}#L{start}" + (f"-L{end}" if end != start else "")
+                    url = self.repos.url(path, commit, start, end)
                 else:
                     source, total, url = "code", 0, ""
                 if not (code or doc):
@@ -311,7 +322,7 @@ class AnswerService:
                 seen.add((path, 0, 0))
                 verified = path in session.dirs
                 reason = "ok" if verified else "도구로 확인하지 않은 폴더"
-                c = Citation("code", path, 0, 0, note, verified, reason, f"{self.repo.web_base}/tree/{commit}/{path}")
+                c = Citation("code", path, 0, 0, note, verified, reason, self.repos.url(path, commit))
                 (ok if verified else bad).append(c)
                 self.store.log_citation(query_id, "code", path, 0, 0, verified, reason)
         return ok, bad
@@ -323,7 +334,7 @@ class AnswerService:
             return False
         path, start = m.group(1), int(m.group(2))
         end = int(m.group(3) or start)
-        if not (self.store.file_info(self.repo.name, path) or self.store.doc_file(path)):
+        if not (self.repos.file_info(self.store, path) or self.store.doc_file(path)):
             return False
         return session.covers(path, min(start, end), max(start, end))
 
@@ -354,7 +365,7 @@ class AnswerService:
                      forced_domains: list[str] | None = None, extra_context: str = "",
                      screenshot: ScreenCapture | None = None) -> Answer:
         """screenshot: 첨부 이미지에서 읽은 문구·배치(이미지 자체는 받지 않는다). 추출 비용은 질문 비용에 합산한다."""
-        commit = self.store.get_repo_commit(self.repo.name) or "unknown"
+        commit = self.repos.commit_value(self.store) or "unknown"
         query_id = self.store.log_query(question, source, user_id, channel, thread_ts, commit)
         has_image = screenshot is not None  # 문구를 하나도 못 읽어도 이미지가 왔으면 첨부로 본다
         vision_cost = screenshot.cost_usd if screenshot is not None else 0.0
@@ -389,8 +400,9 @@ class AnswerService:
         # 3) 에이전트
         session = ToolSession()
         if self.domain_map and scope.domains:
-            session.scope_globs = self.domain_map.globs_for(scope.domains)
-        system = build_system_prompt(self.repo.name, self.repo.description, self.repo.ref, commit, self._overview())
+            session.scope_globs = self.repos.scope_globs(self.domain_map.globs_for(scope.domains))
+        system = build_system_prompt(self.repo.name, self.repo.description, self.repo.ref, commit, self._overview(),
+                                     repos=self._repo_lines(commit) if self.repos.multi else None)
         hints = self.domain_map.glossary_hits(question) if self.domain_map else {}
         extra = ""
         if hints:

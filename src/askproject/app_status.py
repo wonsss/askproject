@@ -33,7 +33,7 @@ def _midnight() -> float:
 
 
 def collect(settings, repo_name: str, web_base: str, port: int | None = None,
-            check_claude: bool = False) -> dict:
+            check_claude: bool = False, repos=None) -> dict:
     from askproject.console.data import ROUTE_KO, ConsoleData
 
     from askproject import __protocol__, __version__, paths
@@ -71,7 +71,7 @@ def collect(settings, repo_name: str, web_base: str, port: int | None = None,
         out["claude_cli"] = bool(find_claude())
         out["auth"] = "subscription" if out["claude_cli"] else "cli_missing"
     if settings.db_path.exists() and repo_name:
-        data = ConsoleData(settings.db_path, repo_name, web_base, eval_results_dir())
+        data = ConsoleData(settings.db_path, repo_name, web_base, eval_results_dir(), repos=repos)
         today, week = _midnight(), time.time() - 7 * 86400
         rows_week = data.rows(source="all", since=week)
         slack_today = [r for r in rows_week if r.source == "slack" and r.ts >= today]

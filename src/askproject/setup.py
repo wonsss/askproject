@@ -74,11 +74,14 @@ def check_github(s: Settings) -> dict:
     except ValueError:
         return {"ok": False, "step": "repos", "detail": "읽을 레포를 골라 주세요"}
     sync = RepoSync(s)
-    try:
-        sha = sync.check_access(repos[0])
-    except Exception as exc:
-        return {"ok": False, "step": "github", "detail": str(exc)[:200]}
-    return {"ok": True, "step": "github", "detail": f"{repos[0].name}@{repos[0].ref} 접근 가능 ({sha})"}
+    done = []
+    for repo in repos:
+        try:
+            sha = sync.check_access(repo)
+        except Exception as exc:
+            return {"ok": False, "step": "github", "detail": f"{repo.name}: {str(exc)[:200]}"}
+        done.append(f"{repo.name}@{repo.ref} 접근 가능 ({sha})")
+    return {"ok": True, "step": "github", "detail": " · ".join(done)}
 
 
 def check_claude(s: Settings) -> dict:

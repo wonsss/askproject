@@ -45,14 +45,16 @@ SYNC_INTERVAL_SEC = 600
 def cmd_sync(force: bool, external: bool) -> None:
     c = build_container()
     r = c.refresh(external=external, force=force)
-    print(f"{c.repo.name} @ {r.commit[:7]} (이전 {r.previous[:7] if r.previous else '-'}) · 변경 파일 {r.changed_files}개 · "
-          f"{'재인덱싱' if r.reindexed else '변경 없음'}")
+    for name, x in (r.repos or {c.repo.name: {"commit": r.commit, "previous": r.previous,
+                                               "changed_files": r.changed_files, "reindexed": r.reindexed}}).items():
+        print(f"{name} @ {x['commit'][:7]} (이전 {x['previous'][:7] if x['previous'] else '-'}) · "
+              f"변경 파일 {x['changed_files']}개 · {'재인덱싱' if x['reindexed'] else '변경 없음'}")
     if r.stats:
         print(json.dumps(r.stats, ensure_ascii=False, indent=2))
 
 
 def _ensure_index(c) -> None:
-    if c.store.file_count(c.repo.name) == 0:
+    if any(c.store.file_count(r.name) == 0 for r in c.repos.repos):
         c.refresh()
 
 
@@ -134,7 +136,7 @@ def cmd_eval(ids: str | None, limit: int | None, concurrency: int) -> None:
         golden = [g for g in golden if g["id"] in wanted]
     if limit:
         golden = golden[:limit]
-    commit = c.store.get_repo_commit(c.repo.name) or "unknown"
+    commit = c.repos.commit_value(c.store) or "unknown"
     _, summary, md = asyncio.run(run_eval(c.service, c.llm, golden, paths.eval_results_dir(), commit, concurrency))
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     print(f"\n결과표: {md}")
@@ -223,8 +225,11 @@ def cmd_console(port: int | None) -> None:
 
     from askproject import host
 
+    from askproject.repo_set import RepoSet
+
     s = Settings()
-    repo = load_repos(s.config_dir)[0]
+    repos = RepoSet.from_repos(load_repos(s.config_dir), s.repos_dir)
+    repo = repos.primary
     names = {d.id: d.name for d in load_domain_map(s.config_dir).domains}
     import os
     import secrets
@@ -233,7 +238,7 @@ def cmd_console(port: int | None) -> None:
     if note:
         print(f"⚠️ {note}")
 
-    data = ConsoleData(s.db_path, repo.name, repo.web_base, paths.eval_results_dir(), names)
+    data = ConsoleData(s.db_path, repo.name, repo.web_base, paths.eval_results_dir(), names, repos=repos)
     token = secrets.token_urlsafe(32)  # 실행마다 새로. 앱은 data/console.json에서 읽어 URL에 붙인다
     paths.atomic_write(s.data_dir / "console.json", json.dumps({"port": port, "token": token, "pid": os.getpid()}))
     hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
@@ -410,7 +415,7 @@ def cmd_maintenance(vacuum: bool) -> None:
     before = s.db_path.stat().st_size
     conn = sqlite3.connect(s.db_path, isolation_level=None)
     try:
-        r = maintenance(conn, load_repos(s.config_dir)[0].name, vacuum=vacuum)
+        r = maintenance(conn, [r.name for r in load_repos(s.config_dir)], vacuum=vacuum)
     finally:
         conn.close()
     print(f"커밋 스냅숏 {r['snapshots_kept']}개 유지 · {r['snapshots_dropped']}개({r['rows_dropped']}행) 정리 · "
@@ -436,13 +441,15 @@ def cmd_status(as_json: bool, check_claude: bool) -> None:
     from askproject.config import load_repos
     from askproject.settings import Settings
 
+    from askproject.repo_set import RepoSet
+
     s = Settings()
     try:
-        repo = load_repos(s.config_dir)[0]
-        name, web = repo.name, repo.web_base
+        repos = RepoSet.from_repos(load_repos(s.config_dir), s.repos_dir)
+        name, web = repos.primary.name, repos.primary.web_base
     except (ValueError, OSError):  # 첫 실행: 레포를 아직 등록하지 않았다(마법사가 상태를 읽는다)
-        name, web = "", ""
-    st = collect(s, name, web, check_claude=check_claude)
+        repos, name, web = None, "", ""
+    st = collect(s, name, web, check_claude=check_claude, repos=repos)
     if as_json:
         print(json.dumps(st, ensure_ascii=False))
         return
@@ -552,7 +559,7 @@ def _learner(c):
     from askproject.learn import Learner, Workspace
 
     s = c.settings
-    return Learner(c.store, c.repo, c.sync.path_for(c.repo), c.service.runner, c.service.code_tools,
+    return Learner(c.store, c.repos, c.service.runner, c.service.code_tools,
                    Workspace(s.config_dir, s.data_dir, s.backup_dir), model=s.model_large,
                    structure_tools=c.service.structure_tools, doc_tools=c.service.doc_tools,
                    effort=s.agent_effort_large or None, provider=s.llm_provider)

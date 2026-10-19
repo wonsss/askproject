@@ -143,7 +143,7 @@ def offline_checks(s: Settings) -> list[Check]:
     try:
         from askproject.config import load_repos
         repos = load_repos(s.config_dir)
-        checks.append(Check(OK, "대상 레포", f"{len(repos)}개: {repos[0].name}"))
+        checks.append(Check(OK, "대상 레포", f"{len(repos)}개: {', '.join(r.name for r in repos)}"))
     except Exception as exc:
         checks.append(Check(FAIL, "대상 레포", f"레포를 등록해 주세요 ({exc})"))
 
@@ -152,10 +152,11 @@ def offline_checks(s: Settings) -> list[Check]:
 
         st = Store(s.db_path)
         n = st.execute("SELECT COUNT(*) n FROM files").fetchone()["n"]
-        commit = st.execute("SELECT commit_sha FROM repo_state LIMIT 1").fetchone()
+        commits = st.execute("SELECT repo, commit_sha FROM repo_state WHERE repo NOT LIKE '#%' ORDER BY repo").fetchall()
+        commit = " · ".join(f"{r['repo']}@{r['commit_sha'][:7]}" for r in commits) or "-"
         docs = st.execute("SELECT source, COUNT(*) n FROM doc_files GROUP BY source").fetchall()
         doc_info = ", ".join(f"{r['source']} {r['n']}" for r in docs) or "없음"
-        checks.append(Check(OK if n else WARN, "인덱스", f"파일 {n}개 · 커밋 {commit['commit_sha'][:7] if commit else '-'} · 문서 {doc_info}"
+        checks.append(Check(OK if n else WARN, "인덱스", f"파일 {n}개 · 커밋 {commit} · 문서 {doc_info}"
                             if n else "비어 있음 — askproject sync", required=False))
         checks.extend(db_checks(s, st))
     else:

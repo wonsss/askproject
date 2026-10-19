@@ -13,7 +13,8 @@ from pathlib import Path
 
 from askproject import paths
 from askproject.config import RepoConfig
-from askproject.indexing.filters import ALWAYS_BLOCK, PathFilter, matches
+from askproject.indexing.filters import ALWAYS_BLOCK, matches
+from askproject.repo_set import RepoSet
 from askproject.store.db import Store
 
 MAX_LINE_CHARS = 240
@@ -48,22 +49,32 @@ class ToolSession:
 
 
 class CodeTools:
-    def __init__(self, store: Store, repo: RepoConfig, repo_path: Path, max_results: int = 20, max_lines: int = 200):
+    """경로는 RepoSet의 가상 경로다(레포가 여러 개면 `<레포 이름>/…`)."""
+
+    def __init__(self, store: Store, repo: RepoConfig | RepoSet, repo_path: Path | None = None,
+                 max_results: int = 20, max_lines: int = 200):
         self.store = store
-        self.repo = repo
-        self.repo_path = repo_path.resolve()
-        self.filter = PathFilter(repo.exclude, repo.include_exceptions)
+        self.repos = repo if isinstance(repo, RepoSet) else RepoSet.single(repo, repo_path)
+        self.repo = self.repos.primary
+        self.repo_path = self.repos.root
         self.max_results = max_results
         self.max_lines = max_lines
 
+    def allowed(self, path: str) -> bool:
+        """제외 규칙에 걸리지 않는 경로인지(레포별 규칙)."""
+        return self.repos.allowed(path)
+
     def _check(self, path: str, session: ToolSession | None = None) -> str | None:
         """허용되지 않은 경로면 거부 사유를 돌려준다."""
-        if not self.filter.allowed(path):
+        if self.repos.split(path) is None:
+            names = ", ".join(r.name for r in self.repos.repos)
+            return f"경로는 레포 이름으로 시작해야 합니다({names})."
+        if not self.repos.allowed(path):
             return "접근이 허용되지 않은 경로입니다."
         full = (self.repo_path / path).resolve()
         if not str(full).startswith(str(self.repo_path) + "/"):
             return "레포 밖 경로입니다."
-        if not self.store.file_info(self.repo.name, path):
+        if not self.repos.file_info(self.store, path):
             return "인덱스에 없는 파일입니다. code_search로 정확한 경로를 먼저 찾으세요."
         if session is not None and not session.in_scope(path):
             return "질문 범위 밖 경로입니다. 꼭 필요하면 widen_scope를 한 번 호출하세요."
@@ -85,9 +96,15 @@ class CodeTools:
         elif session.scope_globs and not session.widened:
             for g in session.scope_globs:
                 cmd += ["-g", g]
-        for pattern in (*self.repo.exclude, *ALWAYS_BLOCK):
+        for repo in self.repos.repos:
+            prefix = self.repos.vpath(repo, "")
+            for pattern in repo.exclude:
+                cmd += ["-g", f"!{prefix}{pattern}"]
+        for pattern in ALWAYS_BLOCK:
             cmd += ["-g", f"!{pattern}"]
-        cmd += ["-e", query, "."]
+        # 여러 레포면 체크아웃 폴더만 찾는다(동기화 상태 파일·작업 폴더 제외)
+        targets = [r.name for r in self.repos.repos if (self.repo_path / r.name).is_dir()] if self.repos.multi else ["."]
+        cmd += ["-e", query, *(targets or ["."])]
         proc = subprocess.run(cmd, cwd=self.repo_path, capture_output=True, text=True, timeout=30)
         if proc.returncode not in (0, 1):
             return f"검색 오류: {proc.stderr.strip()[:200]}"
@@ -119,7 +136,7 @@ class CodeTools:
         reason = self._check(path, session)
         if reason:
             return f"{path}: {reason}"
-        info = self.store.file_info(self.repo.name, path)
+        info = self.repos.file_info(self.store, path)
         total = info["lines"]
         start = max(1, start)
         end = min(total, end if end else start + self.max_lines - 1, start + self.max_lines - 1)
@@ -142,17 +159,23 @@ class CodeTools:
 
     def list_dir(self, session: ToolSession, prefix: str) -> str:
         prefix = prefix.strip().strip("/")
-        rows = self.store.execute(
-            "SELECT path, lines FROM files WHERE repo=? AND substr(path, 1, ?) = ? ORDER BY path",
-            (self.repo.name, len(prefix) + 1 if prefix else 0, f"{prefix}/" if prefix else ""),
-        ).fetchall()
+        rows = []
+        for repo in self.repos.repos:
+            base = self.repos.vpath(repo, "")
+            if prefix and not (f"{prefix}/".startswith(base) or prefix.startswith(base)):
+                continue
+            rel = prefix[len(base):] if prefix.startswith(base) else ""
+            rows += [base + r["path"] for r in self.store.execute(
+                "SELECT path FROM files WHERE repo=? AND substr(path, 1, ?) = ? ORDER BY path",
+                (repo.name, len(rel) + 1 if rel else 0, f"{rel}/" if rel else ""),
+            )]
         if not rows:
             return f"'{prefix}' 아래 인덱싱된 파일이 없습니다."
         # 바로 아래 단계만 묶어서 보여준다 (디렉터리 전체 나열 방지)
         depth = len(prefix.split("/")) if prefix else 0
         children: dict[str, int] = {}
-        for r in rows:
-            parts = r["path"].split("/")
+        for path in rows:
+            parts = path.split("/")
             key = "/".join(parts[: depth + 1]) + ("/" if len(parts) > depth + 1 else "")
             children[key] = children.get(key, 0) + 1
         lines = [f"{k}  ({v}개 파일)" if k.endswith("/") else k for k, v in sorted(children.items())]

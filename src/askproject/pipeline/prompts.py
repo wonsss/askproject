@@ -20,7 +20,7 @@ SYSTEM_TEMPLATE = """\
 - 기획서와 비교하는 질문인데 해당 기획 문서를 도구로 찾지 못했다면 "같다"고 단정하지 말고 "기획 문서를 찾지 못해 비교하지 못했다"고 적습니다.
 - 슬랙 논의는 결정인지 논의 중인지 구분하고 날짜를 함께 적습니다. 문서보다 최신이면 그 점을 밝힙니다.
 - 도구 결과에 "⚙ 설정·환경값 의존" 표시가 있으면, 그 값은 운영 설정에 따라 달라질 수 있다고 적습니다.
-- 답변 기준은 {ref} 브랜치 커밋 {commit}입니다. 아직 배포되지 않은 변경이 포함될 수 있습니다.
+- {basis} 아직 배포되지 않은 변경이 포함될 수 있습니다.
 
 ## 도구 사용 순서
 1. 화면 질문은 find_screen, API·서버 흐름은 find_api, 웹뷰와 앱 사이 동작은 find_bridge로 먼저 지도를 봅니다.
@@ -63,13 +63,18 @@ SYSTEM_TEMPLATE = """\
 - <후속 질문 1>
 - <후속 질문 2>
 
-## 대상 레포
-- 이름: {repo_name}
-- 설명: {repo_description}
+{repo_section}
 
 ## 레포 개요 (레포 개발 가이드 발췌)
 {repo_overview}
 """
+
+MULTI_REPO_RULES = """## 대상 레포 (여러 개)
+{repo_lines}
+
+- 모든 경로는 레포 이름으로 시작합니다(예: `{example}/src/app.ts`). code_search·read_code·list_dir·근거에 같은 형식을 씁니다.
+- 어느 레포에 있는지 모르면 path_glob 없이 검색하거나 list_dir를 빈 prefix로 불러 레포 목록부터 봅니다.
+- 한 기능이 여러 레포에 걸치면(예: 웹 화면 → 서버 API) 레포마다 근거를 찾아 함께 적습니다."""
 
 QUESTION_TEMPLATE = """\
 {question}
@@ -82,11 +87,17 @@ QUESTION_TEMPLATE = """\
 {extra}"""
 
 
-def build_system_prompt(repo_name: str, repo_description: str, ref: str, commit: str, repo_overview: str) -> str:
-    return SYSTEM_TEMPLATE.format(
-        repo_name=repo_name, repo_description=repo_description, ref=ref, commit=commit[:7],
-        repo_overview=repo_overview.strip() or "(없음)",
-    )
+def build_system_prompt(repo_name: str, repo_description: str, ref: str, commit: str, repo_overview: str,
+                        repos: list[tuple[str, str, str, str]] | None = None) -> str:
+    """repos: 여러 레포일 때 (이름, 설명, ref, 커밋) 목록. 없으면 레포 하나."""
+    if repos:
+        lines = "\n".join(f"- {n}: {d or '(설명 없음)'} — {r} 브랜치 커밋 {c[:7]}" for n, d, r, c in repos)
+        section = MULTI_REPO_RULES.format(repo_lines=lines, example=repos[0][0])
+        basis = "답변 기준은 아래 '대상 레포'에 적은 레포별 브랜치 커밋입니다."
+    else:
+        section = f"## 대상 레포\n- 이름: {repo_name}\n- 설명: {repo_description}"
+        basis = f"답변 기준은 {ref} 브랜치 커밋 {commit[:7]}입니다."
+    return SYSTEM_TEMPLATE.format(basis=basis, repo_section=section, repo_overview=repo_overview.strip() or "(없음)")
 
 
 # 흐름도 지시는 정책·흐름 질문에만 질문 뒤에 붙인다(시스템 프롬프트를 그대로 둬 캐시를 유지한다)

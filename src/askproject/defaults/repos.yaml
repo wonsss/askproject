@@ -13,7 +13,8 @@ defaults:
     - "**/.env.example"
 
 repos: []
-# 아래 형식으로 대상 레포를 채운다 (현재 PoC는 첫 번째 레포만 사용).
+# 아래 형식으로 대상 레포를 채운다. 여러 개를 적을 수 있다 — 그러면 답변·근거의 경로가
+# '<name>/<레포 안 경로>'가 되고, domains.yaml의 paths도 같은 형식(예: my-service/apps/api/**)으로 쓴다.
 #  - name: my-service
 #    url: https://github.com/my-org/my-service
 #    ref: main

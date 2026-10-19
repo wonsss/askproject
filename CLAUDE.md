@@ -51,7 +51,7 @@ uv run pytest
 
 `src/askproject/`
 - `learn.py` 도메인·용어 학습(재료·에이전트 초안·결정적 검증·적용·잠금 지문 `data/learn/learned.json`)
-- `app.py` 조립 지점 · `cli.py` · `doctor.py` · `evaluation.py`
+- `app.py` 조립 지점 · `cli.py` · `doctor.py` · `evaluation.py` · `repo_set.py` 여러 레포 경로 공간(`<레포>/…`, 기준 커밋 `이름@sha,…`, 링크)
 - `paths.py` 실행 모드별 경로(개발: 레포 상대, 앱 `ASKPROJECT_APP=1`: ~/Library) · `keychain.py` 앱 모드 비밀값 · `config_store.py` 앱용 설정 계약(검증·원자적 쓰기) · `setup.py` 마법사 점검 · `migrate.py` · `diagnostics.py` · `logs.py`
 - `pipeline/` 스코핑(`scoping.py`) → 라우팅(거절·되묻기·단순·에이전트·와이어프레임) → `answer.py`(인용 검증·확신도) · `prompts.py` · `screenshot.py` · `wireframe.py`(화면 명세 스키마·결정적 렌더러, 자유 HTML 허용 목록 정제·CSP)
 - `agent/` `AgentRunner` 포트 + Claude Agent SDK 구현(내장 도구 끔, 읽기 전용 도구만, PreToolUse 훅 차단)
@@ -79,6 +79,7 @@ uv run pytest
 - 와이어프레임 생성(화면 명세 JSON → 렌더러가 저충실도 HTML, 슬랙 파일 업로드). 상세는 `docs/wireframe.md`. 정책·흐름 질문에는 로직 흐름도(SVG HTML). 상세는 `docs/flowchart.md`.
 - 도메인·용어 학습(`learn.py`, `docs/learn.md`): 덮어쓰지 않는다 — 초안 → 결정적 검증 → 항목별 승인 → 적용. 사람이 쓰거나 고친 항목(지문 불일치·`locked: true`)은 잠금, 제안 뒤 파일이 바뀌면 적용 거부. 앱 화면은 `DomainsLearnView.swift`. 자동 재학습 없음.
 - 답변 끝에 '💬 이어서 물어보기' 후속 질문 버튼 2~3개.
+- 대상 레포는 여러 개 가능(`repo_set.py`). 하나면 경로·인용·감사 로그가 예전과 같고, 여러 개면 경로가 `<레포 이름>/…`, 구조 맵은 repo 키 `*`, 레포 구성은 `repo_state`의 `#layout`에 남겨 바뀌면 구조 맵·레포 문서를 다시 만든다. 레포 이름 없는 도메인 경로는 첫 번째 레포 것으로 읽는다.
 - 웹 콘솔(`askproject console`): 동기화 때 커밋별 파일 해시(`commit_files`)를 기록해 답의 최신성을 판단한다. 외부 공개는 Cloudflare Tunnel + Access(`docs/operations.md`). 배포 앱은 설정 → 팀 공유(대시보드 터널 토큰, 내장 cloudflared, 에이전트 `com.askproject.tunnel`, `tunnel.py`, `setup check tunnel`).
 - DB: 감사 로그 **영구 보존**. 스키마는 `PRAGMA user_version` + `store/db.py`의 `MIGRATIONS`(추가만, 현재 v3). 백업·복구 확인·정리·가리기·복구(`restore`) 명령 있음. 맥 밖 사본은 백업 사본 폴더(`ASKPROJECT_BACKUP_COPY_DIR`, 동기화 폴더에 원자적 복사) 또는 `ASKPROJECT_BACKUP_UPLOAD_CMD`. 앱은 패널 백업 폴더 열기, 설정 → 맥 운영에서 사본 폴더 고르기·'백업에서 복구'(`RestoreView.swift`).
 - 메뉴 막대 앱(SwiftUI `macos/AskProjectBar`, 화면만 맡고 CLI를 부름). 화면 언어 한국어·English(`Localization.swift`의 `L("한국어 원문")`, 영어 사전은 `L10n+*.swift`, 설정 → 정보에서 선택, 기본은 시스템 언어). 새 화면 문구는 반드시 `L()`로 감싸고 사전에 영어를 넣는다. 맥북 호스트 모드(`host.py`, launchd `com.askproject.{bot,console,backup}`)와 봇 중복 실행 잠금(`data/serve.lock`).

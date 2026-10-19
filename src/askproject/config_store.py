@@ -148,6 +148,16 @@ class ConfigPatch(BaseModel):
     secrets: dict[str, str] = Field(default_factory=dict)
     repos: list[RepoInput] | None = None
 
+    @field_validator("repos")
+    @classmethod
+    def _unique_repos(cls, v: list[RepoInput] | None) -> list[RepoInput] | None:
+        # 이름은 data/repos/<이름> 폴더이자 여러 레포일 때 경로 앞머리라 겹치면 안 된다
+        names = [r.name for r in v or []]
+        dup = sorted({n for n in names if names.count(n) > 1})
+        if dup:
+            raise ValueError(f"레포 이름이 겹쳐요: {', '.join(dup)} — 한쪽 이름을 바꿔 주세요")
+        return v
+
     @field_validator("secrets")
     @classmethod
     def _secrets(cls, v: dict[str, str]) -> dict[str, str]:

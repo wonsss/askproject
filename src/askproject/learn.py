@@ -21,7 +21,7 @@ import secrets
 import shutil
 import subprocess
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -30,8 +30,9 @@ import yaml
 from askproject import paths
 from askproject.agent.base import AgentRequest, AgentResponse, AgentRunner, ToolSpec
 from askproject.config import RepoConfig
-from askproject.indexing.filters import ALWAYS_BLOCK, PathFilter, matches
+from askproject.indexing.filters import ALWAYS_BLOCK, matches
 from askproject.llm.pricing import estimate_cost
+from askproject.repo_set import RepoSet
 from askproject.store.db import REDACTED, Store
 from askproject.tools.code_tools import CodeTools, ToolSession
 from askproject.tools.doc_tools import DocTools
@@ -328,13 +329,17 @@ def check_cases(cases: list[dict], before: list[dict], after: list[dict], shared
     return out
 
 
-def build_materials(store: Store, repo: str, kind: str, current_text: str, domains_text: str = "",
+def build_materials(store: Store, repo: str | RepoSet, kind: str, current_text: str, domains_text: str = "",
                     cases: list[dict] | None = None) -> tuple[str, dict]:
-    """에이전트에게 줄 재료(결정적). (프롬프트 본문, 숫자 요약)."""
+    """에이전트에게 줄 재료(결정적). (프롬프트 본문, 숫자 요약). repo: 레포 이름 또는 RepoSet(여러 레포)."""
     cases = cases or []
-    files = [r["path"] for r in store.execute("SELECT path FROM files WHERE repo=? ORDER BY path", (repo,))]
+    if isinstance(repo, RepoSet):
+        files, key = repo.files(store), repo.structure_key
+    else:
+        files = [r["path"] for r in store.execute("SELECT path FROM files WHERE repo=? ORDER BY path", (repo,))]
+        key = repo
     dirs = _dir_counts(files)
-    struct = {k: store.execute("SELECT key, path FROM structure WHERE repo=? AND kind=? ORDER BY key", (repo, k)).fetchall()
+    struct = {k: store.execute("SELECT key, path FROM structure WHERE repo=? AND kind=? ORDER BY key", (key, k)).fetchall()
               for k in ("route", "manifest", "api")}
     docs = store.execute("SELECT source, path, title FROM doc_files ORDER BY source, path").fetchall()
     questions = [r["question"] for r in store.execute(
@@ -491,25 +496,30 @@ def _pattern_problem(p: str) -> str | None:
     return None
 
 
-def make_rg_counter(repo_path: Path, repo: RepoConfig):
-    """식별자 → 들어 있는 파일 수(rg, 제외 규칙 적용). rg가 없으면 None을 돌려준다(확인 못 함)."""
-    flt = PathFilter(repo.exclude, repo.include_exceptions)
+def make_rg_counter(repo_path: Path | RepoSet, repo: RepoConfig | None = None):
+    """식별자 → 들어 있는 파일 수(rg, 제외 규칙 적용). rg가 없으면 None을 돌려준다(확인 못 함).
+    repo_path에 RepoSet을 주면 모든 레포에서 센다."""
+    repos = repo_path if isinstance(repo_path, RepoSet) else RepoSet.single(repo, repo_path)
 
     def count(ident: str) -> int | None:
         rg = paths.rg_path()
         if not rg:
             return None
         cmd = [rg, "--hidden", "--no-ignore", "--no-config", "-l", "--fixed-strings", "--case-sensitive", "--color", "never"]
-        for pattern in (*repo.exclude, *ALWAYS_BLOCK):
+        for r in repos.repos:
+            for pattern in r.exclude:
+                cmd += ["-g", f"!{repos.vpath(r, '')}{pattern}"]
+        for pattern in ALWAYS_BLOCK:
             cmd += ["-g", f"!{pattern}"]
-        cmd += ["-e", ident, "."]
+        targets = [r.name for r in repos.repos if (repos.root / r.name).is_dir()] if repos.multi else ["."]
+        cmd += ["-e", ident, *(targets or ["."])]
         try:
-            proc = subprocess.run(cmd, cwd=repo_path, capture_output=True, text=True, timeout=20)
+            proc = subprocess.run(cmd, cwd=repos.root, capture_output=True, text=True, timeout=20)
         except (OSError, subprocess.TimeoutExpired):
             return None
         if proc.returncode not in (0, 1):
             return None
-        return sum(1 for line in proc.stdout.splitlines() if flt.allowed(line.removeprefix("./")))
+        return sum(1 for line in proc.stdout.splitlines() if repos.allowed(line.removeprefix("./")))
 
     return count
 
@@ -640,8 +650,8 @@ def _plain(kind: str, item: Any) -> Any:
 @dataclass
 class Learner:
     store: Store
-    repo: RepoConfig
-    repo_path: Path
+    repo: RepoConfig | RepoSet
+    repo_path: Path | None
     runner: AgentRunner
     code_tools: CodeTools
     workspace: Workspace
@@ -650,15 +660,19 @@ class Learner:
     doc_tools: DocTools | None = None
     effort: str | None = None
     provider: str = "api"
+    repos: RepoSet = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.repos = self.repo if isinstance(self.repo, RepoSet) else RepoSet.single(self.repo, self.repo_path)
 
     def _files(self) -> list[str]:
-        return [r["path"] for r in self.store.execute("SELECT path FROM files WHERE repo=? ORDER BY path", (self.repo.name,))]
+        return self.repos.files(self.store)
 
     def _inputs(self, kind: str) -> tuple[str, str, dict, list[dict]]:
         text = _read(self.workspace.file(kind))
         domains_text = _read(self.workspace.file("domains")) if kind == "glossary" else ""
         cases = scope_cases(self.store, text if kind == "domains" else domains_text)
-        body, stats = build_materials(self.store, self.repo.name, kind, text, domains_text, cases)
+        body, stats = build_materials(self.store, self.repos, kind, text, domains_text, cases)
         return text, body, stats, cases
 
     def plan(self, kind: str) -> dict:
@@ -676,7 +690,7 @@ class Learner:
             "max_turns": MAX_TURNS[kind],
             "relearn_hint": self._relearn_hint(kind),
             "items": len(current_items(kind, text)[1]),
-            "pending": self.workspace.pending(kind, text, self.store.get_repo_commit(self.repo.name)),
+            "pending": self.workspace.pending(kind, text, self.repos.commit_value(self.store)),
         }
         if self.provider == "subscription":
             out["note"] = "구독 모드라 토큰 과금은 없어요(구독 사용량에서 빠져요). 금액은 api 모드 기준이에요."
@@ -710,13 +724,13 @@ class Learner:
         learned = self.workspace.load_learned()
         raw, current = current_items(kind, text)
         files = self._files()
-        counter = make_rg_counter(self.repo_path, self.repo) if kind == "glossary" else None
+        counter = make_rg_counter(self.repos) if kind == "glossary" else None
         shared = list(_read_shared(self.workspace)) if kind == "domains" else []
         checked = validate(kind, draft, files, current, learned, counter, shared, cases)
         pid = time.strftime("%Y%m%d-%H%M%S") + f"-{kind}-{secrets.token_hex(3)}"
         proposal = {
             "ok": True, "id": pid, "kind": kind, "created_at": time.time(),
-            "commit": self.store.get_repo_commit(self.repo.name), "base_hash": _sha(text),
+            "commit": self.repos.commit_value(self.store), "base_hash": _sha(text),
             "model": resp.model, "provider": self.provider, "cost_usd": round(resp.cost_usd, 4),
             "tokens": {"input": resp.input_tokens, "output": resp.output_tokens,
                        "cache_read": resp.cache_read_tokens, "cache_write": resp.cache_write_tokens},

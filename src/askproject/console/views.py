@@ -12,6 +12,7 @@ import time
 from urllib.parse import urlencode
 
 from askproject.console.data import CHECK_REASONS, PROVIDER_KO, ROUTE_KO, Freshness, Row, parse_answer
+from askproject.repo_set import format_commit
 from askproject.slack.blocks import short_path, tool_step
 
 CONF_KO = {"high": "🟢 높음", "medium": "🟡 보통", "low": "🔴 낮음"}
@@ -174,7 +175,7 @@ def search_page(params: dict, rows: list[Row], domain_names: dict[str, str]) -> 
 def freshness_badge(f: Freshness, latest: str | None) -> str:
     if f.state == "ok":
         return (f'<span class="ok">✅ 근거 코드 그대로</span> <span class="small muted">근거 파일 {f.checked}개가 '
-                f'최신 동기화(main@{e((latest or "")[:7])})까지 바뀌지 않았어요</span>')
+                f'최신 동기화({e(format_commit(latest))})까지 바뀌지 않았어요</span>')
     if f.state == "changed":
         files = ", ".join(f"<code>{e(short_path(p))}</code>" for p in f.changed[:6])
         return (f'<span class="warn">⚠️ 다시 확인 필요</span> <span class="small muted">이 답 이후 근거 파일 '
@@ -203,7 +204,7 @@ def detail(row: Row, view: str, cites: list[dict], fresh: Freshness, latest: str
     tabs = (f'<div class="tabs"><a href="/q/{e(row.id)}" class="{"on" if view != "ops" else ""}">답</a>'
             f'<a href="/q/{e(row.id)}?view=ops" class="{"on" if view == "ops" else ""}">운영자 보기</a></div>')
     meta = (f'<p class="small muted">{when(row.ts)} · {e(SOURCE_KO.get(row.source, row.source))} · '
-            f'기준 main@{e((row.commit or "")[:7])} · 고정 링크 <code>/q/{e(row.id)}</code></p>')
+            f'기준 {e(format_commit(row.commit))} · 고정 링크 <code>/q/{e(row.id)}</code></p>')
     head = f"<h1>{e(row.question)}</h1>{meta}<div>{chips(row, domain_names)}</div>{tabs}"
     if view != "ops":
         if row.has_answer:

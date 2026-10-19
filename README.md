@@ -160,7 +160,7 @@ uv run pytest
 
 | 파일 / 환경변수 | 내용 |
 | --- | --- |
-| `config/repos.yaml` | 대상 레포, 기준 ref, 제외 규칙, 레포별 `structure:` 구조 맵 규칙 |
+| `config/repos.yaml` | 대상 레포(여러 개 가능), 기준 ref, 제외 규칙, 레포별 `structure:` 구조 맵 규칙 |
 | `config/domains.yaml` | 기획자 관점 도메인 목록과 도메인별 허용 경로. 직접 쓰거나 `askproject learn domains`(앱: 설정 → 도메인·용어 → 학습하기)로 초안을 받아 항목별로 적용 |
 | `config/glossary.yaml` | 기획 용어 → 코드 식별자 힌트. `askproject learn glossary`로도 채운다 |
 | `config/*.yaml` 공통 | 서비스 정보가 들어가 **git에 넣지 않는다**(.gitignore). 템플릿은 `src/askproject/defaults/`, 없으면 실행할 때 복사 |
@@ -226,10 +226,20 @@ bash scripts/build-app.sh           # 배포 앱: 백엔드 내장 + Developer I
 
 취약점은 공개 이슈 대신 [SECURITY.md](SECURITY.md)의 방법으로 알려 주세요.
 
+### 여러 레포
+
+`repos.yaml`에 레포를 여러 개 적으면(앱: 마법사에서 여러 개 체크, 설정 → 레포) 동기화가 레포마다 돌고 답변이 모두를 함께 찾는다.
+
+- 경로는 `<레포 이름>/<레포 안 경로>`가 된다(근거·도구·`domains.yaml`의 `paths` 모두). 레포가 하나면 지금처럼 레포 안 경로 그대로다.
+- 레포 이름이 없는 `domains.yaml` 패턴은 첫 번째(기본) 레포 것으로 읽는다. `**/`로 시작하면 모든 레포에 맞는다.
+- 구조 맵은 레포마다 뽑고 API 연결은 레포를 가로지른다(웹 레포의 api-client 호출 → 서버 레포의 컨트롤러).
+- 답변 기준 커밋은 `api@abc…,web@def…`로 남고, 콘솔 최신성은 근거 파일이 속한 레포의 커밋끼리 비교한다.
+- 레포 이름은 겹치면 안 된다(다른 조직의 같은 이름이면 설정 → 레포에서 한쪽 이름을 바꾼다).
+
 ## 현재 상태와 한계
 
 - 같은 질문도 스코핑이 빠른 답과 심층 탐색 사이에서 가끔 다르게 분류한다. 그래서 질문당 비용이 달라질 수 있다.
-- 한 번에 레포 하나만 답에 쓴다. GitHub(github.com) 레포만 지원한다.
+- GitHub(github.com) 레포만 지원한다. 여러 레포를 등록할 수 있다(아래 '여러 레포').
 - 구조 맵 추출기는 패턴 기반이다 — api-client 템플릿 호출, NestJS 데코레이터, Next.js/Expo Router 파일 규칙, WebView 브리지 문자열. 맞지 않는 레포는 `repos.yaml`의 `structure:`를 생략한다(`find_screen`·`find_api`·`find_bridge`가 빈 결과).
 - 와이어프레임은 저충실도다. 실제 디자인 시스템을 쓰지 않고 기존 화면의 구성 관례만 따른다.
 - 화면·문서는 한국어다. 맥 앱은 Apple silicon 전용이다.

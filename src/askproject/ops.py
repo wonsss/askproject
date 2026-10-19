@@ -138,25 +138,31 @@ def latest_backup(dest: Path) -> Path | None:
     return files[-1] if files else None
 
 
-def maintenance(conn: sqlite3.Connection, repo: str, vacuum: bool = False) -> dict:
+def maintenance(conn: sqlite3.Connection, repo: str | list[str], vacuum: bool = False) -> dict:
     """정리: 답변이 참조하지 않는 오래된 커밋 스냅숏 삭제, WAL 체크포인트, 통계 갱신, (선택) VACUUM.
 
     감사 로그(질문·답·근거·피드백)는 건드리지 않는다(영구 보존).
+    repo: 레포 이름 또는 이름 목록(여러 레포면 기준 커밋이 `이름@sha,…`로 남는다).
     """
-    current = conn.execute("SELECT commit_sha FROM repo_state WHERE repo=?", (repo,)).fetchone()
-    keep = {r[0] for r in conn.execute("SELECT DISTINCT commit_sha FROM queries WHERE commit_sha IS NOT NULL")}
-    if current:
-        keep.add(current[0])
-    snapshots = {r[0] for r in conn.execute("SELECT DISTINCT commit_sha FROM commit_files WHERE repo=?", (repo,))}
-    drop = sorted(snapshots - keep)
-    removed = 0
-    for sha in drop:
-        removed += conn.execute("DELETE FROM commit_files WHERE repo=? AND commit_sha=?", (repo, sha)).rowcount
+    repos = [repo] if isinstance(repo, str) else list(repo)
+    keep: set[str] = set()
+    for (value,) in conn.execute("SELECT DISTINCT commit_sha FROM queries WHERE commit_sha IS NOT NULL"):
+        keep.update(part.rpartition("@")[2] for part in value.split(","))
+    total, drop_n, removed = 0, 0, 0
+    for name in repos:
+        current = conn.execute("SELECT commit_sha FROM repo_state WHERE repo=?", (name,)).fetchone()
+        kept = keep | ({current[0]} if current else set())
+        snapshots = {r[0] for r in conn.execute("SELECT DISTINCT commit_sha FROM commit_files WHERE repo=?", (name,))}
+        drop = sorted(snapshots - kept)
+        total += len(snapshots)
+        drop_n += len(drop)
+        for sha in drop:
+            removed += conn.execute("DELETE FROM commit_files WHERE repo=? AND commit_sha=?", (name, sha)).rowcount
     conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     conn.execute("PRAGMA optimize")
     if vacuum:
         conn.execute("VACUUM")
-    return {"snapshots_kept": len(snapshots) - len(drop), "snapshots_dropped": len(drop), "rows_dropped": removed,
+    return {"snapshots_kept": total - drop_n, "snapshots_dropped": drop_n, "rows_dropped": removed,
             "vacuumed": vacuum}
 
 

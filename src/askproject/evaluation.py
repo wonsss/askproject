@@ -21,6 +21,7 @@ import yaml
 
 from askproject.llm.complete import Completer
 from askproject.pipeline.answer import Answer, AnswerService
+from askproject.repo_set import format_commit
 
 JUDGE_PROMPT = """\
 당신은 채점자입니다. 기획자 질문에 대한 봇 답변이 기대 답의 핵심 사실을 맞게 담았는지 판정합니다.
@@ -127,7 +128,7 @@ def summarize(results: list[ItemResult]) -> dict:
 
 
 def render_markdown(results: list[ItemResult], summary: dict, commit: str) -> str:
-    out = [f"# AskProject 평가 결과", "", f"- 기준 커밋: `{commit[:7]}`", f"- 문항: {summary['items']}개", "",
+    out = [f"# AskProject 평가 결과", "", f"- 기준 커밋: `{format_commit(commit).removeprefix('main@')}`", f"- 문항: {summary['items']}개", "",
            "| 지표 | 값 |", "| --- | --- |",
            f"| 정답률 (판정) | {summary['correct']} |",
            f"| 행동 일치 (답변·되묻기·거절) | {summary['behavior']} |",

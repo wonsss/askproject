@@ -48,8 +48,9 @@ def _title_of(text: str, fallback: str) -> str:
     return fallback
 
 
-def index_repo_docs(store: Store, repo_path: Path, files: list[str], web_base: str, commit: str,
-                    path_filter: PathFilter) -> int:
+def collect_repo_docs(repo_path: Path, files: list[str], web_base: str, commit: str, path_filter: PathFilter,
+                      prefix: str = "") -> tuple[list[dict], list[dict]]:
+    """레포 한 곳의 문서·청크. prefix는 여러 레포일 때 경로 앞에 붙는 `<레포 이름>/`."""
     docs, chunks = [], []
     for rel in files:
         if not rel.endswith(".md") or not matches(rel, REPO_DOC_GLOBS) or not path_filter.allowed(rel):
@@ -57,9 +58,15 @@ def index_repo_docs(store: Store, repo_path: Path, files: list[str], web_base: s
         text = (repo_path / rel).read_text(encoding="utf-8", errors="replace")
         title = _title_of(text, rel)
         url = f"{web_base}/blob/{commit}/{rel}"
-        docs.append({"path": rel, "title": title, "url": url, "updated_at": None,
+        docs.append({"path": prefix + rel, "title": title, "url": url, "updated_at": None,
                      "lines": len(text.splitlines()), "body": text})
-        chunks.extend(chunk_markdown(rel, text, title, url))
+        chunks.extend(chunk_markdown(prefix + rel, text, title, url))
+    return docs, chunks
+
+
+def index_repo_docs(store: Store, repo_path: Path, files: list[str], web_base: str, commit: str,
+                    path_filter: PathFilter) -> int:
+    docs, chunks = collect_repo_docs(repo_path, files, web_base, commit, path_filter)
     store.replace_docs("repo", docs, chunks)
     return len(docs)
 

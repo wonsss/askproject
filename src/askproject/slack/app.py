@@ -178,13 +178,11 @@ def build_app(bot_token: str, service: AnswerService, store: Store, escalation_c
         res = store.execute("SELECT route, cost_usd, duration_ms, num_turns, input_tokens, output_tokens, cache_read_tokens, "
                             "cache_write_tokens, answer, provider FROM query_results WHERE query_id=?", (query_id,)).fetchone()
         notes = evidence_notes(res["answer"]) if res else {}
-        base = service.repo.web_base
         cites = []
         for r in rows:
             doc = store.doc_file(r["path"]) if r["source"] in ("notion", "slack") else None
             sha = commit["commit_sha"] if commit else "main"
-            url = (doc["url"] if doc else f"{base}/tree/{sha}/{r['path']}" if not r["start_line"]
-                   else f"{base}/blob/{sha}/{r['path']}#L{r['start_line']}")
+            url = doc["url"] if doc else service.repos.url(r["path"], sha, r["start_line"] or 0)
             cites.append({"source": r["source"], "path": r["path"], "start": r["start_line"], "end": r["end_line"],
                           "verified": bool(r["verified"]), "reason": r["reason"], "url": url,
                           "note": notes.get((r["path"], r["start_line"]), "")})

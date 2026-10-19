@@ -12,7 +12,9 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from askproject.config import RepoConfig
 from askproject.pipeline.answer import LIMIT_ERRORS, _split_evidence, evidence_notes, extract_followups
+from askproject.repo_set import RepoSet
 
 # 본문에서 숨길 명세 블록(흐름도·화면 명세·HTML). 산출물은 따로 표시한다
 SPEC_BLOCKS_RE = re.compile(r"```(?:flow|json|wireframe|html)\s*\n.*?```", re.S | re.I)
@@ -104,14 +106,16 @@ class Row:
 
 class ConsoleData:
     def __init__(self, db_path: Path, repo_name: str, web_base: str, results_dir: Path,
-                 domain_names: dict[str, str] | None = None):
+                 domain_names: dict[str, str] | None = None, repos: RepoSet | None = None):
+        """repos가 있으면 여러 레포 경로 공간을 쓴다. 없으면 repo_name·web_base 레포 하나."""
         if not db_path.exists():
             raise FileNotFoundError(f"감사 로그 DB가 없습니다: {db_path} — 먼저 askproject sync")
         # 읽기 전용 연결: 콘솔은 감사 로그를 바꾸지 않는다
         self.conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
-        self.repo = repo_name
-        self.web_base = web_base
+        self.repos = repos or RepoSet.single(RepoConfig(repo_name, web_base), Path("."))
+        self.repo = self.repos.primary.name
+        self.web_base = self.repos.primary.web_base
         self.results_dir = results_dir
         self.domain_names = domain_names or {}
 
@@ -119,9 +123,12 @@ class ConsoleData:
         return self.conn.execute(sql, params).fetchall()
 
     # ---------- 질문 ----------
-    def latest_commit(self) -> str | None:
-        r = self.q("SELECT commit_sha FROM repo_state WHERE repo=?", (self.repo,))
+    def get_repo_commit(self, repo: str) -> str | None:
+        r = self.q("SELECT commit_sha FROM repo_state WHERE repo=?", (repo,))
         return r[0]["commit_sha"] if r else None
+
+    def latest_commit(self) -> str | None:
+        return self.repos.commit_value(self)
 
     def rows(self, source: str | None = "slack", since: float | None = None) -> list[Row]:
         where, params = [], []
@@ -185,18 +192,14 @@ class ConsoleData:
 
     def citations(self, row: Row) -> list[dict]:
         notes = evidence_notes(row.answer or "")
-        sha = row.commit or "main"
         out = []
         for c in self.q("SELECT source, path, start_line, end_line, verified, reason FROM citations "
                         "WHERE query_id=? ORDER BY id", (row.id,)):
             doc = self.q("SELECT url, source FROM doc_files WHERE path=?", (c["path"],))
             if doc and doc[0]["source"] != "repo" and doc[0]["url"]:
                 url = doc[0]["url"]
-            elif not c["start_line"]:
-                url = f"{self.web_base}/tree/{sha}/{c['path']}"
             else:
-                url = f"{self.web_base}/blob/{sha}/{c['path']}#L{c['start_line']}" + (
-                    f"-L{c['end_line']}" if c["end_line"] != c["start_line"] else "")
+                url = self.repos.url(c["path"], row.commit or "main", c["start_line"] or 0, c["end_line"] or 0)
             out.append({"source": c["source"], "path": c["path"], "start": c["start_line"] or 0,
                         "end": c["end_line"] or 0, "verified": bool(c["verified"]), "reason": c["reason"],
                         "url": url, "note": notes.get((c["path"], c["start_line"] or 0), "")})
@@ -231,20 +234,31 @@ class ConsoleData:
             return Freshness("unknown", reason="기준 커밋을 알 수 없어요")
         if row.commit == latest:
             return Freshness("ok", checked=len(paths))
+        then, now = self.repos.commits(row.commit), self.repos.commits(latest)
+        cache: dict[tuple[str, str], dict[str, str] | None] = {}
 
-        def snapshot(sha: str) -> dict[str, str] | None:
-            rows = self.q("SELECT path, blob FROM commit_files WHERE repo=? AND commit_sha=?", (self.repo, sha))
-            return {r["path"]: r["blob"] for r in rows} if rows else None
+        def snapshot(repo: str, sha: str) -> dict[str, str] | None:
+            if (repo, sha) not in cache:
+                rows = self.q("SELECT path, blob FROM commit_files WHERE repo=? AND commit_sha=?", (repo, sha))
+                cache[repo, sha] = {r["path"]: r["blob"] for r in rows} if rows else None
+            return cache[repo, sha]
 
-        old, new = snapshot(row.commit), snapshot(latest)
-        if old is None or new is None:
-            return Freshness("unknown", reason="커밋 스냅숏이 없어 비교할 수 없어요")
         changed = []
-        for p in paths:
+        for vp in paths:
+            hit = self.repos.split(vp)
+            if not hit:
+                return Freshness("unknown", reason="근거 경로의 레포를 알 수 없어요")
+            repo, p = hit[0].name, hit[1]
+            if then.get(repo) == now.get(repo):
+                continue
+            old = snapshot(repo, then.get(repo, ""))
+            new = snapshot(repo, now.get(repo, ""))
+            if old is None or new is None:
+                return Freshness("unknown", reason="커밋 스냅숏이 없어 비교할 수 없어요")
             if any(k == p or k.startswith(p.rstrip("/") + "/") for k in old):  # 파일 또는 폴더
                 keys = [k for k in old.keys() | new.keys() if k == p or k.startswith(p.rstrip("/") + "/")]
                 if any(old.get(k) != new.get(k) for k in keys):
-                    changed.append(p)
+                    changed.append(vp)
         return Freshness("changed" if changed else "ok", changed, len(paths))
 
     # ---------- 통계·확인 필요 ----------
