@@ -196,6 +196,27 @@ def test_repo_sync_explains_missing_access(tmp_path):
         sync.sync(RepoConfig(name="svc", url="https://github.com/acme/svc"))
 
 
+def test_repo_sync_records_rejected_token_until_success(tmp_path, monkeypatch):
+    monkeypatch.delenv("ASKPROJECT_APP", raising=False)
+    s = Settings(_env_file=None, data_dir=tmp_path / "data", cache_dir=tmp_path / "cache", github_token="github_pat_T")
+    (tmp_path / "data").mkdir()
+    gh = FakeGitHub()
+    reject = {"on": True}
+    transport = httpx.MockTransport(lambda r: httpx.Response(401) if reject["on"] else gh(r))
+    sync = RepoSync(s, client=httpx.Client(transport=transport))
+    repo = RepoConfig(name="svc", url="https://github.com/acme/svc")
+
+    with pytest.raises(RuntimeError, match="GitHub 401"):
+        sync.sync(repo)
+    err = repo_sync.github_error_status(s.data_dir)
+    assert err["status"] == 401 and "만료" in err["message"]
+    assert "ASKPROJECT_GITHUB_TOKEN" in repo_sync.github_fix_hint()  # 개발 모드는 .env를 안내
+
+    reject["on"] = False
+    sync.sync(repo)
+    assert repo_sync.github_error_status(s.data_dir) is None  # 정상 호출이 오면 경고가 사라진다
+
+
 def test_log_rotation_keeps_open_descriptor_valid(tmp_path):
     path = tmp_path / "bot.log"
     with path.open("ab") as f:

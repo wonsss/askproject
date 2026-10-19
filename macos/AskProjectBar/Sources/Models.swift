@@ -49,6 +49,12 @@ struct TokenExpiry: Decodable {
     let warning: Bool
 }
 
+/// 마지막 GitHub 호출이 거부된 원인(401·403·404). 정상이면 status에 없다
+struct GitHubError: Decodable {
+    let status: Int
+    let message: String?
+}
+
 struct OtherHost: Decodable {
     let host_name: String
 }
@@ -77,6 +83,7 @@ struct AppStatus: Decodable {
     let claude: ClaudeCheck?
     let power: PowerInfo?
     let github_token: TokenExpiry?
+    let github_error: GitHubError?
     let allowed_channels: [String]?
     let host_conflict: HostConflict?
 }

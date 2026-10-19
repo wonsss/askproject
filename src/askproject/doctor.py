@@ -103,10 +103,13 @@ def offline_checks(s: Settings) -> list[Check]:
         good = bool(key and key.is_file() and s.github_app_installation_id)
         checks.append(Check(OK if good else FAIL, "GitHub App", "설정됨" if good else "키 파일 경로 또는 설치 ID 확인 필요"))
     elif s.github_token:
-        from askproject.indexing.repo_sync import token_expiry_status
+        from askproject.indexing.repo_sync import github_error_status, github_fix_hint, token_expiry_status
 
         exp = token_expiry_status(s.data_dir)
-        if exp and exp["warning"]:
+        err = github_error_status(s.data_dir)
+        if err:
+            checks.append(Check(FAIL, "GitHub 토큰", f"GitHub {err['status']}: {err['message']} — {github_fix_hint()}"))
+        elif exp and exp["warning"]:
             checks.append(Check(WARN, "GitHub 토큰", f"{exp['days_left']:.0f}일 뒤 만료 — 새 토큰을 발급해 바꿔 주세요",
                                 required=False))
         else:

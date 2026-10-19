@@ -128,6 +128,37 @@ def record_token_expiry(data_dir: Path, response: httpx.Response) -> None:
         log.warning("github_token.json 기록 실패", exc_info=True)
 
 
+GITHUB_ERROR_HINT = {401: "토큰이 거부됐어요(만료·폐기 확인)",
+                     403: "권한 또는 사용량 한도 문제예요",
+                     404: "레포가 없거나 토큰에 이 레포 접근 권한이 없어요(fine-grained PAT의 레포 선택·조직 승인 확인)"}
+
+
+def record_github_error(data_dir: Path, status: int | None) -> None:
+    """마지막 GitHub 호출의 거부(401·403·404)를 남기고, 성공하면 지운다. 메뉴 막대·doctor가 원인을 보여 준다."""
+    p = data_dir / "github_error.json"
+    try:
+        if status in GITHUB_ERROR_HINT:
+            paths.atomic_write(p, json.dumps({"status": status, "message": GITHUB_ERROR_HINT[status], "at": time.time()},
+                                             ensure_ascii=False))
+        else:
+            p.unlink(missing_ok=True)
+    except OSError:
+        log.warning("github_error.json 기록 실패", exc_info=True)
+
+
+def github_error_status(data_dir: Path) -> dict | None:
+    """status --json용: {"status", "message", "at"}. 마지막 호출이 정상이면 None."""
+    try:
+        return json.loads((data_dir / "github_error.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def github_fix_hint() -> str:
+    return ("앱 설정에서 GitHub 토큰을 새로 넣어 주세요." if paths.app_mode()
+            else ".env의 ASKPROJECT_GITHUB_TOKEN을 새 토큰으로 바꿔 주세요.")
+
+
 def token_expiry_status(data_dir: Path, warn_days: int = 7) -> dict | None:
     """status --json용: {"expires_at", "days_left", "warning"}. 기록이 없으면 None."""
     try:
@@ -166,11 +197,9 @@ class RepoSync:
         r = self.client.get(f"{self.settings.github_api_url}{path}", headers=headers, **kw)
         if self.auth.kind == "token":
             record_token_expiry(self.settings.data_dir, r)
-        if r.status_code in (401, 403, 404):
-            hint = {401: "토큰이 거부됐어요(만료·폐기 확인)",
-                    403: "권한 또는 사용량 한도 문제예요",
-                    404: "레포가 없거나 토큰에 이 레포 접근 권한이 없어요(fine-grained PAT의 레포 선택·조직 승인 확인)"}
-            raise RuntimeError(f"GitHub {r.status_code}: {hint[r.status_code]}")
+        record_github_error(self.settings.data_dir, r.status_code)
+        if r.status_code in GITHUB_ERROR_HINT:
+            raise RuntimeError(f"GitHub {r.status_code}: {GITHUB_ERROR_HINT[r.status_code]}")
         r.raise_for_status()
         return r
 

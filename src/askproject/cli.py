@@ -149,6 +149,16 @@ def cmd_serve() -> None:
     s = c.settings
     if not (s.slack_bot_token and s.slack_app_token):
         sys.exit("ASKPROJECT_SLACK_BOT_TOKEN, ASKPROJECT_SLACK_APP_TOKEN이 필요합니다.")
+    from askproject.setup import check_slack
+
+    try:
+        slack = check_slack(s)  # 토큰이 거부되면 트레이스백 대신 원인 한 줄로 멈춘다
+    except Exception:
+        slack = {"ok": True}  # 네트워크 문제는 Socket Mode가 다시 붙으며 회복한다
+    if not slack["ok"]:
+        where = ("앱 설정 → 연결에서 슬랙 토큰을 새로 넣어 주세요." if paths.app_mode()
+                 else ".env의 ASKPROJECT_SLACK_BOT_TOKEN·ASKPROJECT_SLACK_APP_TOKEN을 바꿔 주세요.")
+        sys.exit(f"슬랙에 연결할 수 없어 봇을 시작하지 않았어요: {slack['detail']}. {where}")
     from askproject.host import acquire_serve_lock, hold_awake
 
     _lock = acquire_serve_lock(s.data_dir)  # noqa: F841 — 프로세스가 끝날 때까지 잡고 있어야 한다
@@ -160,7 +170,16 @@ def cmd_serve() -> None:
     problem = claude_preflight(s)  # 키·크레딧 문제를 첫 질문이 아니라 시작할 때 알린다
     if problem:
         sys.exit(f"Claude를 호출할 수 없어 봇을 시작하지 않았어요: {problem}")
-    c.refresh()
+    try:
+        c.refresh()
+    except Exception as exc:
+        # 트레이스백 대신 원인 한 줄을 남긴다(메뉴 막대가 로그 마지막 줄을 보여 준다)
+        from askproject.indexing.repo_sync import github_fix_hint
+
+        hint = f" {github_fix_hint()}" if str(exc).startswith("GitHub ") else ""
+        if not any(c.store.file_count(r.name) for r in c.repos.repos):
+            sys.exit(f"레포를 받을 수 없어 봇을 시작하지 않았어요: {exc}.{hint}")
+        logging.error("레포 동기화 실패 — 마지막으로 받은 코드로 답해요: %s.%s", exc, hint)
 
     async def periodic_sync() -> None:
         from askproject.logs import rotate_if_needed

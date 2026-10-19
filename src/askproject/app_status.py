@@ -37,7 +37,7 @@ def collect(settings, repo_name: str, web_base: str, port: int | None = None,
     from askproject.console.data import ROUTE_KO, ConsoleData
 
     from askproject import __protocol__, __version__, paths
-    from askproject.indexing.repo_sync import token_expiry_status
+    from askproject.indexing.repo_sync import github_error_status, token_expiry_status
     from askproject.slack.heartbeat import read_conflict
 
     jobs = host.job_states(getattr(settings, "log_dir", settings.data_dir / "logs"))
@@ -59,6 +59,7 @@ def collect(settings, repo_name: str, web_base: str, port: int | None = None,
         # 실행당 토큰. 앱은 열 주소 끝에 ?key=를 붙인다(콘솔이 쿠키로 바꾸고 주소에서 지운다)
         "console_key": console["token"] if console else None,
         "github_token": token_expiry_status(settings.data_dir),
+        "github_error": github_error_status(settings.data_dir),  # 마지막 GitHub 호출이 거부됐으면 원인
         "allowed_channels": [c.strip() for c in allowed.split(",") if c.strip()],
         "host_conflict": read_conflict(settings.data_dir),
         "provider": provider,

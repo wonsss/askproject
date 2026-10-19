@@ -45,7 +45,14 @@ final class AppModel: ObservableObject {
             w.append(L("다른 맥(%@)에서 같은 슬랙 봇이 켜져 있어요. 한 대만 켜 두세요.", c.others.map(\.host_name).joined(separator: ", ")))
         }
         if isApp && Agents.needsApproval { w.append(L("시스템 설정 → 로그인 항목에서 AskProject를 허용해야 봇이 켜져요.")) }
-        if let t = s.github_token, t.warning, let d = t.days_left {
+        if let e = s.github_error {
+            switch e.status {
+            case 401: w.append(isApp ? L("GitHub가 토큰을 거부했어요(만료·폐기). 새 토큰을 발급해 설정에서 바꿔 주세요.")
+                                     : L("GitHub가 토큰을 거부했어요(만료·폐기). .env의 ASKPROJECT_GITHUB_TOKEN을 새 토큰으로 바꿔 주세요."))
+            case 404: w.append(L("GitHub 토큰으로 레포를 읽을 수 없어요. 토큰의 레포 접근 권한을 확인해 주세요."))
+            default: w.append(L("GitHub 접근이 막혔어요(권한 또는 사용량 한도). 토큰 권한을 확인해 주세요."))
+            }
+        } else if let t = s.github_token, t.warning, let d = t.days_left {
             w.append(d <= 0 ? L("GitHub 토큰이 만료됐어요. 새 토큰을 발급해 설정에서 바꿔 주세요.")
                             : L("GitHub 토큰이 %ld일 뒤 만료돼요. 미리 새 토큰으로 바꿔 주세요.", Int(d.rounded(.up))))
         }
