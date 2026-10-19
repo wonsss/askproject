@@ -35,3 +35,6 @@ def test_collect_status_for_menubar(tmp_path, monkeypatch):
     assert out["recent"][0]["provider"] == "subscription" and out["recent"][1]["provider"] is None  # 이전 행은 NULL
     assert out["last_backup"]["name"] == "askproject-20261016-000000.sqlite3" and out["last_backup"]["offsite"] is False
     assert out["generated_at"] <= time.time()
+    assert out["console_public_url"] is None  # 팀 공유 주소를 정하지 않음
+    s.console_public_host = "askproject.example.com"
+    assert app_status.collect(s, "", "")["console_public_url"] == "https://askproject.example.com"

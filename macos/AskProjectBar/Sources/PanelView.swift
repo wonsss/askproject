@@ -116,6 +116,10 @@ struct PanelView: View {
             Divider()
             HStack {
                 Button(L("웹 콘솔")) { model.openConsole() }
+                if let link = model.teamShareURL {
+                    Button(L("팀 공유 링크")) { NSWorkspace.shared.open(link) }
+                        .help(link.absoluteString)
+                }
                 Button(L("로그")) { model.openLogs() }
                 Button(L("설정")) { WindowManager.shared.showSettings() }
                 Spacer()

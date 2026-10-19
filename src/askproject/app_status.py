@@ -58,6 +58,8 @@ def collect(settings, repo_name: str, web_base: str, port: int | None = None,
         "console_url": f"http://127.0.0.1:{port}",
         # 실행당 토큰. 앱은 열 주소 끝에 ?key=를 붙인다(콘솔이 쿠키로 바꾸고 주소에서 지운다)
         "console_key": console["token"] if console else None,
+        # 팀 공유 공개 주소(Cloudflare Access 로그인을 거친다). 설정하지 않았으면 None
+        "console_public_url": f"https://{public}" if (public := getattr(settings, "console_public_host", None)) else None,
         "github_token": token_expiry_status(settings.data_dir),
         "github_error": github_error_status(settings.data_dir),  # 마지막 GitHub 호출이 거부됐으면 원인
         "allowed_channels": [c.strip() for c in allowed.split(",") if c.strip()],

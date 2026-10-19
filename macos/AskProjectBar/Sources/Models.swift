@@ -72,6 +72,7 @@ struct AppStatus: Decodable {
     let configured: Bool?
     let console_url: String
     let console_key: String?
+    let console_public_url: String?  // 팀 공유 공개 주소. 설정 안 했으면 nil
     let auth: String
     let provider: String?
     let claude_cli: Bool?

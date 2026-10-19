@@ -4,6 +4,7 @@ extension L10n {
     static let panel: [String: String] = [
         "봇": "Bot",
         "웹 콘솔": "Web console",
+        "팀 공유 링크": "Team share link",
         "백업": "Backup",
         "팀 공유": "Team sharing",
         "포트를 다른 프로그램이 사용 중": "Port in use by another app",

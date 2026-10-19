@@ -232,6 +232,13 @@ final class AppModel: ObservableObject {
         return state
     }
 
+    /// 팀 공유(터널)가 실행 중이고 공개 주소가 있을 때만. 팀원과 같은 Access 로그인을 거친다.
+    var teamShareURL: URL? {
+        guard let s = status, s.jobs["tunnel"]?.state == "running",
+              let u = s.console_public_url else { return nil }
+        return URL(string: u)
+    }
+
     /// 콘솔은 실행마다 새 키를 쓴다. 키를 붙여 열면 콘솔이 쿠키로 바꾸고 주소에서 지운다.
     func openConsole(_ path: String = "/") {
         Task {
