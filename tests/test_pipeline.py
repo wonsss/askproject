@@ -82,7 +82,11 @@ async def test_slack_blocks(store, tools, repo_cfg, repo_dir):
     assert "API 키" in str(blocks)  # 메타 줄의 프로바이더 라벨
     assert "github.com/example/demo/blob/abc1234def" in str(blocks)
     assert to_mrkdwn("**굵게** [링크](https://x.y)") == "*굵게* <https://x.y|링크>"
-    assert to_mrkdwn("- 첫째\n  - 둘째") == "• 첫째\n  • 둘째"
+    # 슬랙은 줄 앞 일반 공백을 지우므로 하위 항목은 em space로 들여쓰고 기호를 바꾼다
+    assert to_mrkdwn("- 첫째\n  - 둘째") == "• 첫째\n  ◦ 둘째"
+    assert to_mrkdwn("- 가\n    - 나\n        * 다\n- 라") == (
+        "• 가\n  ◦ 나\n    ▪ 다\n• 라")
+    assert to_mrkdwn("  - 들여쓴 최상위") == "• 들여쓴 최상위"
 
 
 def test_plain_body_keeps_code_only_in_dev_note():

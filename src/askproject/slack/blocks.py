@@ -34,9 +34,25 @@ def split_body(text: str) -> tuple[str, list[str]]:
     return "\n".join(main).strip(), [f.strip() for f in foot if f.strip()]
 
 
+LIST_ITEM = re.compile(r"^([ \t]*)[-*]\s+", re.MULTILINE)
+BULLETS = ("•", "◦", "▪")
+INDENT = "  "  # 슬랙은 줄 앞 일반 공백을 지우므로 em space로 들여쓴다
+
+
+def _bullets(text: str) -> str:
+    """목록 글머리를 •로 바꾸고, 하위 항목은 들여쓰기 깊이(문서 안 들여쓰기 폭의 순위)대로 들여쓴다."""
+    widths = sorted({len(m.group(1).expandtabs(4)) for m in LIST_ITEM.finditer(text)})
+
+    def repl(m: re.Match) -> str:
+        level = widths.index(len(m.group(1).expandtabs(4)))
+        return INDENT * level + BULLETS[min(level, len(BULLETS) - 1)] + " "
+
+    return LIST_ITEM.sub(repl, text)
+
+
 def to_mrkdwn(text: str) -> str:
     """마크다운 일부를 슬랙 mrkdwn으로 바꾼다."""
-    text = re.sub(r"^(\s*)[-*]\s+", r"\1• ", text, flags=re.MULTILINE)
+    text = _bullets(text)
     text = re.sub(r"\*\*(.+?)\*\*", r"*\1*", text)
     text = re.sub(r"^#{1,6}\s*(.+)$", r"*\1*", text, flags=re.MULTILINE)
     text = re.sub(r"\[([^\]]+)\]\((https?://[^)]+)\)", r"<\2|\1>", text)
