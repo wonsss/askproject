@@ -111,12 +111,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
+    /// 앱을 끄면 팀 공유 터널도 내린다(봇·콘솔·백업은 앱과 상관없이 계속 돈다).
+    func applicationWillTerminate(_ notification: Notification) {
+        Agents.pauseTunnel()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         Task { @MainActor in await SettingsModel.prefetch() }  // 첫 설정 창이 빈 화면 없이 뜨게
-        guard Backend.isBundled else { return }  // 개발 앱은 레포 경로에서 그대로 돈다
+        guard Backend.isBundled else {  // 개발 앱은 레포 경로에서 그대로 돈다
+            Task { await Agents.resumeTunnelIfNeeded() }
+            return
+        }
         if offerMoveToApplications() { return }
         Task { @MainActor in
             await afterUpdateIfNeeded()
+            await Agents.resumeTunnelIfNeeded()  // 지난번에 앱을 끌 때 내린 터널
             Updater.shared.start()
             try? await Task.sleep(nanoseconds: 1_200_000_000)
             let model = AppModel.shared

@@ -81,6 +81,10 @@ def fake_launchd(tmp_path, monkeypatch):
 
     def launchctl(*args):
         calls.append(args)
+        if args[0] == "bootout":
+            loaded.discard(args[1].rsplit("/", 1)[1])
+        if args[0] == "bootstrap":
+            loaded.add(Path(args[2]).stem)
         ok = args[0] != "print" or args[1].rsplit("/", 1)[1] in loaded
         out = "\tpid = 4242\n" if args[0] == "print" and ok and "waiting" not in loaded else ""
         return subprocess.CompletedProcess(args, 0 if ok else 113, out, "")
@@ -167,3 +171,28 @@ def test_restart_while_waiting_reregisters_instead_of_kickstart(fake_launchd, tm
     assert host.restart_from("bot", repo) == ("restarted", repo)
     assert not any(c[0] == "kickstart" for c in calls)
     assert [c[0] for c in calls if c[0] in ("bootout", "bootstrap")] == ["bootout", "bootstrap"]
+
+
+def test_dev_tunnel_switch(fake_launchd, tmp_path):
+    """개발 앱의 팀 공유 스위치: 켜면 plist를 쓰고(떠 있던 같은 레이블 터널은 먼저 내림), 앱을 끌 때는 내리기만,
+    켤 때 다시 띄우고, 끄면 plist까지 지운다."""
+    calls, loaded, agents = fake_launchd
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    label = "com.askproject.tunnel"
+    loaded.add(label)  # 배포 앱이 띄운 터널
+    host.tunnel_on(repo, tmp_path / "logs")
+    d = plistlib.loads((agents / f"{label}.plist").read_bytes())
+    assert d["ProgramArguments"][-1] == "tunnel" and d["WorkingDirectory"] == str(repo.resolve())
+    assert [c[0] for c in calls if c[0] in ("bootout", "bootstrap")] == ["bootout", "bootstrap"]
+    assert host.tunnel_registered()
+
+    calls.clear()
+    assert host.tunnel_pause() and ("bootout", f"{host._domain()}/{label}") in calls
+    assert host.tunnel_registered()  # 켜 둔 설정은 남는다
+    assert host.tunnel_resume() and calls[-1][0] == "bootstrap"
+    assert not host.tunnel_resume()  # 이미 떠 있으면 건드리지 않는다
+
+    host.tunnel_off()
+    assert not host.tunnel_registered()
+    assert not host.tunnel_resume() and not host.tunnel_pause()

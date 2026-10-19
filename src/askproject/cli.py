@@ -7,6 +7,7 @@
   askproject stats                            감사 로그 요약
   askproject console [--port 18787]           웹 콘솔 (로컬 전용, 읽기 전용, API 비용 없음)
   askproject host on|off|status|restart       맥북 호스트 모드 (봇·콘솔 상시 실행, 잠자기 방지, 매일 백업)
+  askproject host tunnel-on|tunnel-off        팀 공유 터널 켜기·끄기 (개발 모드, 앱은 설정 → 팀 공유 스위치)
   askproject provider [api|subscription]      LLM 인증 경로 확인·전환 (subscription=로컬 claude CLI 구독)
   askproject power [default|lid-open|lid-closed]  맥북 절전 모드 확인·전환 (덮개 닫힘은 전원 연결 시만)
   askproject backup [--dest DIR]              감사 로그 백업 (+ 백업 사본 폴더·ASKPROJECT_BACKUP_UPLOAD_CMD로 맥 밖 복사)
@@ -543,8 +544,22 @@ def cmd_host(action: str, port: int, job: str = "bot") -> None:
         sys.exit("host 명령은 macOS 전용입니다. 서버는 docker compose를 쓰세요(docs/deploy-vultr.md).")
     s = Settings()
     logs = s.log_dir
-    if action in ("on", "off") and paths.app_mode():
+    if action in ("on", "off", "tunnel-on", "tunnel-off", "tunnel-resume") and paths.app_mode():
         sys.exit("앱 모드에서는 메뉴 막대 앱의 켜기·끄기를 쓰세요(SMAppService로 등록돼요).")
+    if action == "tunnel-on":
+        host.tunnel_on(Path.cwd(), logs)
+        print(f"팀 공유 터널을 켰어요 · 로그 {logs}/tunnel.log · 30초쯤 뒤 askproject setup check tunnel로 확인하세요")
+        return
+    if action == "tunnel-off":
+        host.tunnel_off()
+        print("팀 공유 터널을 껐어요. 이제 이 맥에서만 열려요.")
+        return
+    if action == "tunnel-pause":  # 메뉴 막대 앱을 끌 때: 터널만 내리고 켜 둔 설정은 남긴다
+        print("팀 공유 터널을 멈췄어요" if host.tunnel_pause() else "떠 있는 터널이 없어요")
+        return
+    if action == "tunnel-resume":
+        print("팀 공유 터널을 다시 띄웠어요" if host.tunnel_resume() else "다시 띄울 터널이 없어요")
+        return
     if action == "on":
         names = host.on(Path.cwd(), logs, port)
         print(f"켰어요: {', '.join(names)} · 콘솔 http://127.0.0.1:{port or host.preferred_console_port(s)} · 로그 {logs}/")
@@ -774,8 +789,10 @@ def main() -> None:
     sta.add_argument("--json", action="store_true")
     sta.add_argument("--check-claude", action="store_true", help="1토큰 호출로 키·크레딧 확인 (약 $0.00001)")
     ho = sub.add_parser("host", help="맥북 호스트 모드: 봇·콘솔 상시 실행, 잠자기 방지, 매일 백업 (macOS)")
-    ho.add_argument("action", choices=["on", "off", "status", "restart"])
-    ho.add_argument("job", nargs="?", default="bot", choices=["bot", "console", "backup"], help="restart 대상 (기본 bot)")
+    ho.add_argument("action", choices=["on", "off", "status", "restart",
+                                       "tunnel-on", "tunnel-off", "tunnel-pause", "tunnel-resume"])
+    ho.add_argument("job", nargs="?", default="bot", choices=["bot", "console", "backup", "tunnel"],
+                    help="restart 대상 (기본 bot)")
     ho.add_argument("--port", type=int, default=None, help="콘솔 포트 고정 (기본: 실행할 때 정함, ASKPROJECT_CONSOLE_PORT)")
     pv = sub.add_parser("provider", help="LLM 인증 경로 확인·전환 (api=API 키, subscription=로컬 claude CLI 구독)")
     pv.add_argument("mode", nargs="?", choices=["api", "subscription"])

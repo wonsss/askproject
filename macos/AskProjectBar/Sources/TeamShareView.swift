@@ -20,7 +20,6 @@ enum CloudflareDash {
 
 struct TeamShareForm: View {
     @ObservedObject var m: SettingsModel
-    var isApp: Bool = Backend.isBundled
 
     private static let docs = "https://developers.cloudflare.com"
     // Cloudflare 문서가 쓰는 대시보드 바로 가기(`?to=/:account/…`). 메뉴 위치가 바뀌어도 해당 화면으로 연다
@@ -42,19 +41,14 @@ struct TeamShareForm: View {
                 TokenField(title: L("터널 토큰"), placeholder: L("cloudflared service install eyJ… 또는 eyJ…"), text: $m.shareToken,
                            problem: WizardModel.prefixProblem(SettingsModel.tunnelToken(m.shareToken), "eyJ", L("터널 토큰")),
                            saved: m.shareTokenSaved)
-                if isApp {
-                    HStack {
-                        Button(m.shareOn ? L("터널 켜짐") : L("저장하고 터널 켜기")) { Task { await m.saveTokenAndStart() } }
-                            .disabled(m.working || m.shareOn || (!m.shareTokenSaved && SettingsModel.tunnelToken(m.shareToken).isEmpty))
-                        if m.shareOn {
-                            Text(L("대시보드에서 연결됨이 보이면 Continue를 누르세요")).font(.caption).foregroundStyle(.secondary)
-                        }
+                HStack {
+                    Button(m.shareOn ? L("터널 켜짐") : L("저장하고 터널 켜기")) { Task { await m.saveTokenAndStart() } }
+                        .disabled(m.working || m.shareOn || (!m.shareTokenSaved && SettingsModel.tunnelToken(m.shareToken).isEmpty))
+                    if m.shareOn {
+                        Text(L("대시보드에서 연결됨이 보이면 Continue를 누르세요")).font(.caption).foregroundStyle(.secondary)
                     }
-                    .controlSize(.small)
-                } else {
-                    Text(L("개발 앱: .env에 ASKPROJECT_CLOUDFLARE_TUNNEL_TOKEN을 넣고 터미널에서 uv run askproject tunnel"))
-                        .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 }
+                .controlSize(.small)
             }
 
             step(3, L("공개 주소 정하기"),
@@ -144,21 +138,14 @@ struct TeamShareForm: View {
 /// 팀 공유 켜기·연결 확인·저장. 설정 탭은 아래 고정 줄에, 마법사는 본문 아래에 둔다.
 struct TeamShareControls: View {
     @ObservedObject var m: SettingsModel
-    let isApp: Bool
 
     var body: some View {
         HStack {
-            if isApp {
-                Toggle(L("팀 공유 켜기"), isOn: Binding(get: { m.shareOn }, set: { m.setShare($0) }))
-                    .toggleStyle(.switch)
-                    // 토큰만 있으면 켤 수 있다 — 대시보드는 터널이 연결돼야 공개 주소·Access 단계로 넘어간다
-                    .disabled(m.working || (!m.shareOn && !m.shareTokenSaved))
-                    .help(m.shareTokenSaved || m.shareOn ? L("이 맥에서 터널을 켜고 꺼요") : L("2번 터널 토큰을 저장하면 켤 수 있어요"))
-            } else {
-                // 개발 앱은 SMAppService 에이전트가 없어 스위치를 둘 수 없다 — 잠긴 스위치 대신 할 일을 적는다
-                Text(L("개발 앱: 터널은 터미널에서 uv run askproject tunnel"))
-                    .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-            }
+            Toggle(L("팀 공유 켜기"), isOn: Binding(get: { m.shareOn }, set: { v in Task { await m.setShare(v) } }))
+                .toggleStyle(.switch)
+                // 토큰만 있으면 켤 수 있다 — 대시보드는 터널이 연결돼야 공개 주소·Access 단계로 넘어간다
+                .disabled(m.working || (!m.shareOn && !m.shareTokenSaved))
+                .help(m.shareTokenSaved || m.shareOn ? L("이 맥에서 터널을 켜고 꺼요") : L("2번 터널 토큰을 저장하면 켤 수 있어요"))
             Button(m.checkingShare ? L("확인 중…") : L("연결 확인")) { Task { await m.checkShare() } }
                 .disabled(m.checkingShare || !m.shareComplete)
             Spacer()

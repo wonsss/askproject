@@ -87,7 +87,6 @@ extension L10n {
         "채널 다시 불러오기": "Reload channels",
         "웹 콘솔을 팀원과 함께 보기": "Share the web console with your team",
         "팀원은 브라우저에서 https://<공개 주소>로 들어오고, 허용 목록에 있는 이메일로 받은 코드로 로그인해요. 콘솔은 계속 이 맥(127.0.0.1)에만 열려 있고, Cloudflare Tunnel이 바깥과 이어 줘요. 아래 순서대로 하면 10분쯤 걸려요.": "Teammates open https://<public address> in a browser and sign in with a code sent to an allow-listed email. The console stays open only on this Mac (127.0.0.1), and Cloudflare Tunnel connects it to the outside. Following the steps below takes about 10 minutes.",
-        "개발 앱에서는 켜고 끌 수 없어요. docs/operations.md의 CLI 방식(cloudflared + launchd)을 쓰세요.": "This can't be turned on or off in the dev app. Use the CLI method (cloudflared + launchd) in docs/operations.md.",
         "절전": "Sleep",
         "맥이 잠들면 봇도 멈춰요.": "When the Mac sleeps, the bot stops too.",
         "기본 — 맥이 잠들면 봇도 멈춤": "Default — the bot stops when the Mac sleeps",

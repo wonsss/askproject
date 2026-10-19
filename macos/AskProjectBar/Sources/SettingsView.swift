@@ -79,7 +79,7 @@ final class SettingsModel: ObservableObject {
         shareHost = c.settings.console_public_host ?? ""
         shareTeam = c.settings.cf_access_team_domain ?? ""
         shareAud = c.settings.cf_access_aud ?? ""
-        shareOn = Backend.isBundled && Agents.tunnelEnabled
+        shareOn = Agents.tunnelOn
     }
 
     /// 대시보드의 설치 명령 전체(`cloudflared service install eyJ…`)를 붙여넣어도 토큰만 쓴다.
@@ -170,28 +170,35 @@ final class SettingsModel: ObservableObject {
         // 콘솔은 공개 호스트·Access 값을 시작할 때 읽는다. 배포 앱(SMAppService)과 개발 호스트 모드(host on)의
         // launchd 레이블이 같아서 kickstart는 두 모드 모두에서 동작한다(등록돼 있지 않으면 아무 일도 없다)
         Agents.restart("console")
-        if Backend.isBundled && Agents.tunnelEnabled { Agents.restart(Agents.tunnel) }
+        if Agents.tunnelOn { Agents.restart(Agents.tunnel) }
         await load()
     }
 
     /// 2번 단계: 토큰을 저장하고 바로 터널을 켠다(대시보드의 Continue가 연결을 기다리므로).
     func saveTokenAndStart() async {
         await saveShare()
-        guard note?.ok == true, shareTokenSaved, Backend.isBundled else { return }
-        setShare(true)
+        guard note?.ok == true, shareTokenSaved else { return }
+        await setShare(true)
     }
 
-    func setShare(_ on: Bool) {
-        do {
-            let approval = try Agents.setTunnel(on)
-            note = CheckResult(ok: !approval, detail: approval
-                               ? L("시스템 설정 → 로그인 항목에서 AskProject를 허용하면 터널이 켜져요.")
-                               : (on ? L("팀 공유를 켰어요. 30초쯤 뒤 '연결 확인'을 눌러 보세요.") : L("팀 공유를 껐어요. 이제 이 맥에서만 열려요.")),
-                               step: nil)
-        } catch {
-            note = CheckResult(ok: false, detail: L("팀 공유를 바꾸지 못했어요: %@", error.localizedDescription), step: nil)
+    /// 배포 앱은 SMAppService 에이전트, 개발 앱은 `host tunnel-on|off`(~/Library/LaunchAgents plist).
+    func setShare(_ on: Bool) async {
+        let done = on ? L("팀 공유를 켰어요. 30초쯤 뒤 '연결 확인'을 눌러 보세요.") : L("팀 공유를 껐어요. 이제 이 맥에서만 열려요.")
+        if Backend.isBundled {
+            do {
+                let approval = try Agents.setTunnel(on)
+                note = CheckResult(ok: !approval, detail: approval
+                                   ? L("시스템 설정 → 로그인 항목에서 AskProject를 허용하면 터널이 켜져요.") : done, step: nil)
+            } catch {
+                note = CheckResult(ok: false, detail: L("팀 공유를 바꾸지 못했어요: %@", error.localizedDescription), step: nil)
+            }
+        } else {
+            working = true
+            let r = await Backend.run(["host", on ? "tunnel-on" : "tunnel-off"])
+            working = false
+            note = CheckResult(ok: r.ok, detail: r.ok ? done : L("팀 공유를 바꾸지 못했어요: %@", r.errorLine), step: nil)
         }
-        shareOn = Agents.tunnelEnabled
+        shareOn = Agents.tunnelOn
         shareCheck = nil
     }
 
@@ -538,13 +545,9 @@ struct SettingsView: View {
         SettingsPage {
             SectionHeader(L("웹 콘솔을 팀원과 함께 보기"),
                           L("팀원은 브라우저에서 https://<공개 주소>로 들어오고, 허용 목록에 있는 이메일로 받은 코드로 로그인해요. 콘솔은 계속 이 맥(127.0.0.1)에만 열려 있고, Cloudflare Tunnel이 바깥과 이어 줘요. 아래 순서대로 하면 10분쯤 걸려요."))
-            if !app.isApp {
-                Text(L("개발 앱에서는 켜고 끌 수 없어요. docs/operations.md의 CLI 방식(cloudflared + launchd)을 쓰세요."))
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
             TeamShareForm(m: m)
         } footer: {
-            TeamShareControls(m: m, isApp: app.isApp)
+            TeamShareControls(m: m)
         }
     }
 

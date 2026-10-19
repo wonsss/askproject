@@ -19,6 +19,7 @@ import plistlib
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -141,6 +142,12 @@ def jobs(repo: Path, uv: str, port: int | None = None) -> list[Job]:
     ]
 
 
+def tunnel_job(repo: Path, uv: str) -> Job:
+    """팀 공유 터널. 봇 켜기·끄기(host on|off)와 따로, 설정 → 팀 공유 스위치(host tunnel-on|off)로만 켜고 끈다."""
+    return Job("tunnel", f"{LABEL_PREFIX}.tunnel", [uv, "run", "--project", str(repo), "askproject", "tunnel"],
+               keep_alive=True)
+
+
 def plist_for(job: Job, repo: Path, log_dir: Path) -> dict:
     d = {
         "Label": job.label,
@@ -202,6 +209,55 @@ def off() -> list[str]:
             done.append(name)
         (_agents_dir() / f"{label}.plist").unlink(missing_ok=True)
     return done
+
+
+def _tunnel_plist() -> Path:
+    return _agents_dir() / f"{LABEL_PREFIX}.tunnel.plist"
+
+
+def tunnel_registered() -> bool:
+    """개발 모드에서 팀 공유를 켜 뒀는지(plist가 있음). 메뉴 막대 앱이 꺼져 멈춰 있어도 켜 둔 것으로 본다."""
+    return _tunnel_plist().is_file()
+
+
+def tunnel_on(repo: Path, log_dir: Path) -> None:
+    """팀 공유 터널을 등록하고 띄운다. 같은 레이블로 떠 있는 터널(배포 앱이 띄운 것 포함)은 먼저 내린다 —
+    한 맥에 터널이 둘이면 Cloudflare가 요청을 둘에 나눠 보내 다른 콘솔로 갈 수 있다."""
+    uv = shutil.which("uv") or "/opt/homebrew/bin/uv"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    _agents_dir().mkdir(parents=True, exist_ok=True)
+    job = tunnel_job(repo.resolve(), uv)
+    _tunnel_plist().write_bytes(plistlib.dumps(plist_for(job, repo.resolve(), log_dir.resolve())))
+    tunnel_pause()
+    r = _launchctl("bootstrap", _domain(), str(_tunnel_plist()))
+    if r.returncode != 0:
+        raise RuntimeError(f"{job.label} 등록 실패: {r.stderr.strip()}")
+
+
+def tunnel_pause() -> bool:
+    """떠 있는 터널만 내린다(plist는 둔다). 메뉴 막대 앱을 끌 때 쓴다. 내렸으면 True."""
+    label = f"{LABEL_PREFIX}.tunnel"
+    if not _loaded(label):
+        return False
+    _launchctl("bootout", f"{_domain()}/{label}")
+    # bootout은 작업이 다 내려가기 전에 돌아온다. 바로 bootstrap하면 "Bootstrap failed: 5"로 실패한다
+    for _ in range(50):
+        if not _loaded(label):
+            break
+        time.sleep(0.1)
+    return True
+
+
+def tunnel_resume() -> bool:
+    """켜 뒀는데(plist 있음) 떠 있지 않으면 다시 띄운다. 메뉴 막대 앱이 켜질 때 쓴다. 띄웠으면 True."""
+    if not tunnel_registered() or _loaded(f"{LABEL_PREFIX}.tunnel"):
+        return False
+    return _launchctl("bootstrap", _domain(), str(_tunnel_plist())).returncode == 0
+
+
+def tunnel_off() -> None:
+    tunnel_pause()
+    _tunnel_plist().unlink(missing_ok=True)
 
 
 def restart(name: str) -> bool:

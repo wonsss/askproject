@@ -29,6 +29,7 @@ uv run askproject console           # 웹 콘솔 127.0.0.1:18787 (읽기 전용,
 uv run askproject backup | restore-check | maintenance   # DB 운영 (docs/operations.md)
 uv run askproject backups [--json] | restore <백업 파일> --yes [--json]   # 백업 목록 · 백업으로 DB 교체(봇·콘솔 끈 뒤)
 uv run askproject tunnel              # 웹 콘솔 팀 공유 터널 (설정 → 팀 공유, launchd 작업용)
+uv run askproject host tunnel-on|tunnel-off   # 개발 모드 팀 공유 스위치 (앱 종료 때 tunnel-pause, 켤 때 tunnel-resume)
 uv run askproject host on|off|status   # 맥북 호스트 모드 (launchd, 잠자기 방지, 매일 백업)
 uv run askproject status [--json]      # 메뉴 막대 앱용 상태 (Claude 호출 없음)
 uv run askproject provider [api|subscription]  # LLM 인증 경로 확인·전환

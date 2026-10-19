@@ -1,6 +1,7 @@
 // 상시 실행 작업(봇·콘솔·매일 백업, 그리고 켰을 때만 팀 공유 터널). 배포 앱은 번들의 Contents/Library/LaunchAgents plist를 SMAppService로 등록한다.
 // plist의 BundleProgram이 번들 기준 상대 경로라 앱을 옮기거나 업데이트해도 경로가 깨지지 않는다.
-// 개발 앱은 기존처럼 `askproject host on|off`(~/Library/LaunchAgents에 uv run plist)를 쓴다.
+// 개발 앱은 기존처럼 `askproject host on|off`(~/Library/LaunchAgents에 uv run plist)를 쓴다. 팀 공유는 `host tunnel-on|off`.
+// 두 모드의 레이블이 같아서, 한쪽이 띄운 작업은 다른 쪽 패널에도 보이고 launchctl로 내릴 수 있다.
 
 import AppKit
 import Foundation
@@ -38,6 +39,33 @@ enum Agents {
     }
 
     static var tunnelEnabled: Bool { service(tunnel).status == .enabled }
+
+    /// 개발 앱: 팀 공유를 켜 뒀는지(`host tunnel-on`이 쓴 plist가 있음). 배포 앱 등록과 레이블이 같아 파일로 구분한다.
+    static var devTunnelEnabled: Bool {
+        FileManager.default.fileExists(atPath: NSHomeDirectory() + "/Library/LaunchAgents/\(label(tunnel)).plist")
+    }
+
+    /// 이 앱(배포·개발)에서 팀 공유 스위치가 켜져 있는지
+    static var tunnelOn: Bool { Backend.isBundled ? tunnelEnabled : devTunnelEnabled }
+
+    static func loaded(_ name: String) -> Bool {
+        launchctl(["print", "gui/\(getuid())/\(label(name))"]) == 0
+    }
+
+    /// 메뉴 막대 앱을 끌 때: 떠 있는 터널을 내린다(어느 모드가 띄웠든 레이블이 같다). 켜 둔 설정은 그대로라
+    /// 다음에 앱을 켜면 resumeTunnelIfNeeded가 다시 띄운다. 앱을 끄고 잊은 터널이 계속 바깥과 이어져 있지 않게.
+    static func pauseTunnel() {
+        launchctl(["bootout", "gui/\(getuid())/\(label(tunnel))"])
+    }
+
+    /// 앱을 켤 때: 팀 공유를 켜 뒀는데 터널이 떠 있지 않으면 다시 띄운다.
+    static func resumeTunnelIfNeeded() async {
+        if Backend.isBundled {
+            if tunnelEnabled && !loaded(tunnel) { resume([tunnel]) }
+        } else if devTunnelEnabled {
+            _ = await Backend.run(["host", "tunnel-resume"])
+        }
+    }
 
     /// 팀 공유 켜기·끄기. 켤 때 로그인 항목 허용이 필요하면 true(시스템 설정을 연다).
     @discardableResult

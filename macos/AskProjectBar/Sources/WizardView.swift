@@ -515,7 +515,7 @@ struct WizardView: View {
                 TeamShareForm(m: share).padding(.trailing, 12)
             }
             if let n = share.note { NoteView(note: n) }
-            TeamShareControls(m: share, isApp: AppModel.shared.isApp)
+            TeamShareControls(m: share)
         }
         .task { await share.load() }
     }

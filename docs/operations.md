@@ -192,10 +192,19 @@ uv run askproject redact <query_id> --reason "질문에 실명·연락처 포함
 | 연결 확인 | `askproject setup check tunnel`: 빈 항목 → 토큰 형식 → cloudflared → 이 터널의 `/ready` 연결 수(실행마다 빈 포트를 골라 `data/tunnel.json`에 적는다 — 따로 띄운 cloudflared와 섞이지 않게) → Access 팀 키 → 공개 주소가 Access 로그인으로 넘어가는지(넘겨 주는 팀 도메인이 저장 값과 같은지도). 로그인 없이 응답하면(Access 앱 누락) 실패로 알린다 |
 | 로그 | `~/Library/Logs/AskProject/tunnel.log` |
 | 끄기 | 앱에서 **팀 공유 켜기**를 끈다. 완전 철거는 대시보드에서 터널·Access 앱 삭제 |
+| 앱 종료 | 메뉴 막대 앱을 끄면 터널을 내린다(`applicationWillTerminate`, 켜 둔 설정은 남김). 앱을 다시 켜면 띄운다. 봇·콘솔·백업은 앱과 상관없이 계속 돈다 |
 
-### 개발 모드 (CLI 방식)
+### 개발 앱 (스위치)
 
-개발 앱은 SMAppService를 쓰지 않으므로 아래처럼 직접 띄운다. 대시보드 토큰 방식을 쓰려면 `.env`에 `ASKPROJECT_CLOUDFLARE_TUNNEL_TOKEN=eyJ…`를 넣고 `uv run askproject tunnel`로 띄워도 된다.
+개발 앱도 설정 → 팀 공유의 **팀 공유 켜기** 스위치로 켜고 끈다. 스위치는 `askproject host tunnel-on|tunnel-off`를 부르고, 이 명령이 `~/Library/LaunchAgents/com.askproject.tunnel.plist`(`uv run askproject tunnel`, 로그 `data/logs/tunnel.log`)를 쓰고 지운다. 토큰은 `.env`의 `ASKPROJECT_CLOUDFLARE_TUNNEL_TOKEN`.
+
+- 배포 앱과 레이블(`com.askproject.tunnel`)이 같다. `tunnel-on`은 같은 레이블로 떠 있는 터널(배포 앱이 띄운 것 포함)을 먼저 내린다 — 한 맥에 터널이 둘이면 Cloudflare가 요청을 나눠 보낸다. 배포 앱에서도 팀 공유를 켜 뒀다면 다음 로그인 때 둘 중 먼저 뜬 쪽이 이기므로, 한쪽 앱에서만 켜 둔다.
+- 연결 확인은 자기 `data/tunnel.json`이 없으면 다른 모드의 상태 파일(`~/Library/Application Support/AskProject/data/`, 등록된 plist의 레포 `data/`)도 본다.
+- 앱 종료 때 `tunnel-pause`(plist는 둠), 켤 때 `tunnel-resume`.
+
+### 개발 모드 (CLI 방식, 예전 방식)
+
+자격증명 파일 방식으로 직접 띄울 때. 대시보드 토큰 방식은 위 스위치를 쓴다.
 
 | 항목 | 값 |
 | --- | --- |
