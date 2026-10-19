@@ -112,6 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Task { @MainActor in await SettingsModel.prefetch() }  // 첫 설정 창이 빈 화면 없이 뜨게
         guard Backend.isBundled else { return }  // 개발 앱은 레포 경로에서 그대로 돈다
         if offerMoveToApplications() { return }
         Task { @MainActor in

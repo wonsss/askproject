@@ -16,6 +16,7 @@ final class SettingsModel: ObservableObject {
     @Published var channels: [SlackChannel] = []
     @Published var channelsError: String?
     @Published var loadingChannels = false
+    private var channelsLoaded = false  // 이 창에서 한 번은 새로 읽는다(캐시만 보여 준 상태와 구분)
     @Published var allowed: Set<String> = []
     @Published var allowDM = false
     @Published var hostChannel = ""
@@ -33,19 +34,51 @@ final class SettingsModel: ObservableObject {
     @Published var checks: [String: CheckResult] = [:]
     @Published var checking: String?
 
-    func load() async {
+    /// 창을 열 때마다 CLI를 기다리지 않게 마지막으로 읽은 설정·채널을 기억해 두고 먼저 보여 준다(뒤에서 다시 읽어 갱신).
+    private static var cachedConfig: (state: ConfigState, raw: String)?
+    private static var cachedChannels: ChannelList?
+
+    init() {
+        if let c = Self.cachedConfig { apply(c.state) }
+        if let list = Self.cachedChannels { channels = list.channels }
+    }
+
+    /// 앱 시작 때 미리 읽어 두면 첫 설정 창도 바로 뜬다.
+    static func prefetch() async {
+        _ = await fetchConfig()
+    }
+
+    private static func fetchConfig() async -> (state: ConfigState?, raw: String, out: Backend.Output) {
         let (c, out) = await Backend.json(ConfigState.self, ["config", "get", "--json"])
+        let raw = out.out.split(separator: "\n").last(where: { $0.hasPrefix("{") }).map(String.init) ?? ""
+        if let c { cachedConfig = (c, raw) }
+        return (c, raw, out)
+    }
+
+    func load() async {
+        let before = Self.cachedConfig?.raw
+        let shown = config != nil
+        let (c, raw, out) = await Self.fetchConfig()
+        guard let c else {
+            if !shown { note = CheckResult(ok: false, detail: L("설정을 읽지 못했어요: ") + out.errorLine, step: nil) }
+            return
+        }
+        // 캐시로 이미 보여 준 값과 같으면 덮어쓰지 않는다(그사이 고치던 입력을 지우지 않게).
+        if shown && raw == before { return }
+        apply(c)
+    }
+
+    private func apply(_ c: ConfigState) {
         config = c
-        if c == nil { note = CheckResult(ok: false, detail: L("설정을 읽지 못했어요: ") + out.errorLine, step: nil) }
-        repos = c?.repos ?? []
-        notionRoot = c?.settings.notion_root_page_id ?? ""
-        allowedText = c?.settings.allowed_channels ?? ""
-        hostChannel = c?.settings.host_channel ?? ""
-        escalation = c?.settings.escalation_channel ?? ""
+        repos = c.repos
+        notionRoot = c.settings.notion_root_page_id ?? ""
+        allowedText = c.settings.allowed_channels ?? ""
+        hostChannel = c.settings.host_channel ?? ""
+        escalation = c.settings.escalation_channel ?? ""
         if escalation == hostChannel { escalation = "" }
-        shareHost = c?.settings.console_public_host ?? ""
-        shareTeam = c?.settings.cf_access_team_domain ?? ""
-        shareAud = c?.settings.cf_access_aud ?? ""
+        shareHost = c.settings.console_public_host ?? ""
+        shareTeam = c.settings.cf_access_team_domain ?? ""
+        shareAud = c.settings.cf_access_aud ?? ""
         shareOn = Backend.isBundled && Agents.tunnelEnabled
     }
 
@@ -213,8 +246,15 @@ final class SettingsModel: ObservableObject {
         loadingChannels = true
         let (list, out) = await Backend.json(ChannelList.self, ["setup", "channels"])
         loadingChannels = false
-        channels = list?.channels ?? []
+        channelsLoaded = true
+        if let list, list.ok { Self.cachedChannels = list }
+        // 다시 읽기가 실패해도 기억해 둔 목록은 남긴다.
+        if list?.ok == true || Self.cachedChannels == nil { channels = list?.channels ?? [] }
         channelsError = list.map { $0.ok ? nil : $0.detail } ?? out.errorLine
+    }
+
+    func loadChannelsOnce() async {
+        if !channelsLoaded { await loadChannels() }
     }
 
     func save(settings: [String: Any] = [:], secrets: [String: String] = [:], repos: [[String: String]]? = nil,
@@ -479,7 +519,7 @@ struct SettingsView: View {
             }
             .buttonStyle(.borderedProminent).disabled(m.working)
         }
-        .task { if m.channels.isEmpty { await m.loadChannels() } }
+        .task { await m.loadChannelsOnce() }
     }
 
     private var share: some View {
