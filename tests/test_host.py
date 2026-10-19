@@ -82,7 +82,8 @@ def fake_launchd(tmp_path, monkeypatch):
     def launchctl(*args):
         calls.append(args)
         ok = args[0] != "print" or args[1].rsplit("/", 1)[1] in loaded
-        return subprocess.CompletedProcess(args, 0 if ok else 113, "", "")
+        out = "\tpid = 4242\n" if args[0] == "print" and ok and "waiting" not in loaded else ""
+        return subprocess.CompletedProcess(args, 0 if ok else 113, out, "")
 
     monkeypatch.setattr(host, "_agents_dir", lambda: tmp_path / "LaunchAgents")
     monkeypatch.setattr(host, "_launchctl", launchctl)
@@ -154,3 +155,15 @@ def test_port_free_sees_listener():
         srv.bind(("127.0.0.1", 0))
         srv.listen()
         assert not host.port_free(srv.getsockname()[1])
+
+
+def test_restart_while_waiting_reregisters_instead_of_kickstart(fake_launchd, tmp_path):
+    """시작하다 죽어 재시작 대기 중이면 kickstart가 멈추므로 다시 등록해 바로 띄운다"""
+    calls, loaded, agents = fake_launchd
+    repo = tmp_path / "main"
+    repo.mkdir()
+    _register(agents, repo)
+    loaded.update({"com.askproject.bot", "waiting"})
+    assert host.restart_from("bot", repo) == ("restarted", repo)
+    assert not any(c[0] == "kickstart" for c in calls)
+    assert [c[0] for c in calls if c[0] in ("bootout", "bootstrap")] == ["bootout", "bootstrap"]

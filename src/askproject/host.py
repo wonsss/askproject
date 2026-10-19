@@ -207,8 +207,15 @@ def off() -> list[str]:
 def restart(name: str) -> bool:
     """등록된 작업 하나를 다시 띄운다(kickstart -k). 등록돼 있지 않으면 False."""
     label = f"{LABEL_PREFIX}.{name}"
-    if not _loaded(label):
+    r = _launchctl("print", f"{_domain()}/{label}")
+    if r.returncode != 0:
         return False
+    plist = _agents_dir() / f"{label}.plist"
+    if "\tpid = " not in r.stdout and plist.is_file():
+        # 시작하다 죽어 재시작 대기(ThrottleInterval) 중이면 kickstart는 바로 띄우지 못하고 멈춘다.
+        # 다시 등록하면 대기가 풀려 바로 뜬다(설정을 고친 직후 1분씩 기다리지 않게)
+        _launchctl("bootout", f"{_domain()}/{label}")
+        return _launchctl("bootstrap", _domain(), str(plist)).returncode == 0
     return _launchctl("kickstart", "-k", f"{_domain()}/{label}").returncode == 0
 
 
