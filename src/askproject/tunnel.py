@@ -54,13 +54,31 @@ def _free_port() -> int:
         return sock.getsockname()[1]
 
 
+def _state_candidates(s: Settings) -> list[Path]:
+    """이 설정의 상태 파일, 그다음 다른 실행 모드가 띄운 터널의 것. 개발·배포 앱의 터널은 launchd 레이블이 같아
+    패널에는 '실행 중'으로 보이는데, 연결 확인이 자기 data 폴더만 보면 연결 안 됨으로 잘못 알린다."""
+    from askproject import host
+
+    out = [_state_path(s), paths.app_support() / "data" / "tunnel.json"]
+    repo = host.registered_repo("tunnel")
+    if repo:
+        out.append(repo / "data" / "tunnel.json")
+    seen: list[Path] = []
+    for p in out:
+        if p.resolve() not in [x.resolve() for x in seen]:
+            seen.append(p)
+    return seen
+
+
 def _running_metrics(s: Settings) -> str | None:
-    try:
-        state = json.loads(_state_path(s).read_text(encoding="utf-8"))
-        os.kill(int(state["pid"]), 0)
-        return state["metrics"]
-    except (OSError, ValueError, KeyError, TypeError):
-        return None
+    for path in _state_candidates(s):
+        try:
+            state = json.loads(path.read_text(encoding="utf-8"))
+            os.kill(int(state["pid"]), 0)
+            return state["metrics"]
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return None
 
 
 def parse_token(token: str) -> str:

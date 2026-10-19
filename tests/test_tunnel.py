@@ -20,6 +20,12 @@ def _token(**over) -> str:
     return base64.b64encode(json.dumps(body).encode()).decode().rstrip("=")
 
 
+@pytest.fixture(autouse=True)
+def _isolated_home(tmp_path, monkeypatch):
+    """연결 확인은 다른 실행 모드의 상태 파일(~/Library…, ~/Library/LaunchAgents)도 본다 — 이 맥의 실제 터널과 섞이지 않게."""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+
 @pytest.fixture
 def app_home(tmp_path, monkeypatch):
     monkeypatch.setenv("ASKPROJECT_APP", "1")
@@ -186,6 +192,19 @@ def test_check_ignores_other_cloudflared_without_our_state_file(monkeypatch, tmp
     monkeypatch.setattr(tunnel, "cloudflared_path", lambda: "/bin/cloudflared")
     r = tunnel.check(_shared(data_dir=tmp_path), client=_client(4))
     assert not r["ok"] and "연결되지 않았어요" in r["detail"]
+
+
+def test_check_finds_tunnel_started_by_other_mode(monkeypatch, tmp_path):
+    """개발 앱의 연결 확인이 배포 앱이 띄운 터널(같은 launchd 레이블, 다른 data 폴더)도 알아본다."""
+    from askproject import paths
+
+    monkeypatch.setattr(tunnel, "cloudflared_path", lambda: "/bin/cloudflared")
+    other = paths.app_support() / "data"
+    other.mkdir(parents=True)
+    (other / "tunnel.json").write_text(json.dumps({"pid": os.getpid(), "metrics": "127.0.0.1:1"}))
+    (tmp_path / "dev").mkdir()
+    r = tunnel.check(_shared(data_dir=tmp_path / "dev"), client=_client())
+    assert r["ok"], r["detail"]
 
 
 def test_check_reports_team_domain_mismatch(monkeypatch, tmp_path):
