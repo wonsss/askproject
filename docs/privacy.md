@@ -13,10 +13,11 @@
 | **GitHub API** (`api.github.com`) | 인증 토큰과 요청만 — 코드는 **받기만** 함 | 10분마다 동기화 | `indexing/repo_sync.py`, `setup.py` | — |
 | **Notion API** (선택) | 인증 토큰과 요청만 — 페이지를 받기만 함 | 동기화 때 | `indexing/notion_source.py` | 노션 토큰을 넣지 않으면 꺼짐 |
 | 업데이트 확인 (배포 앱, Sparkle) | appcast 주소에 HTTP 요청(앱 이름·버전이 User-Agent에 들어감). 시스템 정보는 보내지 않음(`SUEnableSystemProfiling` 끔) | 하루 한 번 | `Updater.swift` | `SU_FEED_URL` 없이 빌드하면 꺼짐 |
-| Cloudflare Access 공개 키 (선택) | 공개 키 요청만 | 웹 콘솔을 팀에 공개하도록 설정했을 때 | `console/server.py` | 설정하지 않으면 꺼짐 |
+| **팀 공유 터널** (선택, Cloudflare Tunnel) | `cloudflared`가 Cloudflare로 나가는 연결을 열고, 팀원이 콘솔에서 보는 **질문·답·근거 화면이 Cloudflare를 거쳐** 전달됨(Cloudflare가 TLS를 종료하므로 내용을 볼 수 있는 위치). 터널 토큰은 환경변수로만 넘기고 다른 비밀값은 넘기지 않음 | 설정 → 팀 공유를 켰을 때 계속 | `tunnel.py`, `console/server.py` | 팀 공유를 끄거나 터널 토큰을 지우면 꺼짐(기본 꺼짐) |
+| Cloudflare Access 공개 키 (선택) | 공개 키 요청만 — 팀원 로그인(Access JWT) 검증용 | 팀 공유를 켰을 때 | `console/server.py` | 팀 공유를 끄면 꺼짐 |
 | 백업 업로드 (선택) | 감사 로그 DB 백업 파일 | 매일 03:30 | `ops.py` | `ASKPROJECT_BACKUP_UPLOAD_CMD`를 비우면 꺼짐(기본) |
 
-이 밖의 주소로 나가는 코드는 없습니다. 웹 콘솔은 `127.0.0.1`에서만 열리고, 앱(메뉴 막대)은 로컬 백엔드 명령과 로컬 콘솔만 부릅니다.
+이 밖의 주소로 나가는 코드는 없습니다. 웹 콘솔은 `127.0.0.1`에서만 열리고(팀 공유를 켜도 바깥 요청은 터널을 거쳐서만, Access 로그인을 통과해야 들어옴), 앱(메뉴 막대)은 로컬 백엔드 명령과 로컬 콘솔만 부릅니다.
 
 ## 일부러 끈 것
 
@@ -52,5 +53,5 @@
 
 ## 직접 확인하는 법
 
-- 위 표의 코드 위치를 읽거나, 네트워크 모니터(Little Snitch, LuLu 등)로 봇 프로세스의 연결 대상을 보세요. 정상이라면 `api.anthropic.com`, `slack.com`·`wss-*.slack.com`, `api.github.com`·`codeload.github.com`(+ 선택한 Notion·업데이트 주소)뿐입니다.
+- 위 표의 코드 위치를 읽거나, 네트워크 모니터(Little Snitch, LuLu 등)로 봇 프로세스의 연결 대상을 보세요. 정상이라면 `api.anthropic.com`, `slack.com`·`wss-*.slack.com`, `api.github.com`·`codeload.github.com`(+ 선택한 Notion·업데이트 주소, 팀 공유를 켰다면 `cloudflared`의 Cloudflare 연결)뿐입니다.
 - 문제를 발견하면 [SECURITY.md](../SECURITY.md)의 방법으로 알려 주세요.

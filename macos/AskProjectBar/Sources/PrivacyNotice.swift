@@ -14,6 +14,8 @@ enum Privacy {
         ("bubble.left.and.bubble.right", "Slack", L("답변·파일 게시, 첨부 이미지 받기, 지정한 채널 읽기")),
         ("arrow.down.circle", "GitHub · Notion", L("코드·문서를 받기만 해요(읽기 전용 토큰)")),
         ("arrow.triangle.2.circlepath", L("업데이트 확인"), L("새 버전이 있는지 묻는 요청만. 시스템 정보는 보내지 않아요")),
+        ("person.2", L("팀 공유 (선택, Cloudflare Tunnel)"),
+         L("켰을 때만. 팀원이 웹 콘솔에서 보는 질문·답 화면이 Cloudflare를 거쳐 전달돼요. 기본은 꺼져 있어요.")),
     ] }
 
     static var never: [String] { [
@@ -23,7 +25,7 @@ enum Privacy {
     ] }
 
     static var local: [String] { [
-        L("질문·답은 감사 로그로 이 맥에 영구 보관되고, 웹 콘솔은 이 맥(127.0.0.1)에서만 열려요."),
+        L("질문·답은 감사 로그로 이 맥에 영구 보관되고, 웹 콘솔은 이 맥(127.0.0.1)에서만 열려요(팀 공유를 켜면 Access 로그인을 거친 팀원도)."),
         L("토큰·키는 macOS Keychain에 보관해요."),
     ] }
 }
