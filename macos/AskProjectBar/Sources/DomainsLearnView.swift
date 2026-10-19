@@ -11,6 +11,25 @@ struct LearnMaterials: Decodable {
     let apis: Int
     let docs: Int
     let questions: Int
+    let cases: LearnCaseCounts?
+}
+
+/// 감사 로그에서 찾은 범위를 잘못 잡은 사례 수(재료).
+struct LearnCaseCounts: Decodable {
+    let widened: Int
+    let picked: Int
+    let down: Int
+    var total: Int { widened + picked + down }
+}
+
+/// 범위 사례가 풀리는지(지금 → 모두 적용 시).
+struct LearnCaseCheck: Decodable {
+    struct Side: Decodable { let total: Int; let before: Int; let after: Int }
+    struct Left: Decodable { let type: String; let question: String; let domains: [String] }
+    let widened: Side
+    let picked: Side
+    let down: Int
+    let unresolved: [Left]
 }
 
 struct LearnPlan: Decodable {
@@ -114,6 +133,7 @@ struct LearnProposal: Decodable {
     let items: [LearnItem]?
     let rejected: [LearnRejected]?
     let coverage: LearnCoverage?
+    let cases: LearnCaseCheck?
     let agent_error: String?
     let error: String?
     var created_at: Double?
@@ -276,6 +296,10 @@ struct DomainsLearnView: View {
                         if let mt = p.materials {
                             Text(L("재료: 파일 %ld · 화면 %ld · API %ld · 문서 %ld · 최근 질문 %ld", mt.files, mt.routes, mt.apis, mt.docs, mt.questions))
                                 .font(.caption).foregroundStyle(.secondary)
+                            if let c = mt.cases, c.total > 0 {
+                                Text(L("범위를 잘못 잡은 사례: 범위 넓힘 %ld · 되묻기 선택 %ld · 👎 %ld", c.widened, c.picked, c.down))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
                         }
                         if let n = p.note { Text(n).font(.caption).foregroundStyle(.secondary) }
                         if let hint = p.relearn_hint {
@@ -328,6 +352,16 @@ struct DomainsLearnView: View {
                         .font(.caption)
                     if !cov.after.top_uncovered.isEmpty {
                         Text(L("남는 폴더: ") + cov.after.top_uncovered.map { "\($0.dir) \($0.files)" }.joined(separator: " · "))
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if let cs = p.cases, cs.widened.total + cs.picked.total > 0 {
+                    Text(L("범위 사례 풀림: 범위 넓힘 %ld/%ld → %ld/%ld · 되묻기 선택 %ld/%ld → %ld/%ld (모두 적용 시)",
+                           cs.widened.before, cs.widened.total, cs.widened.after, cs.widened.total,
+                           cs.picked.before, cs.picked.total, cs.picked.after, cs.picked.total))
+                        .font(.caption)
+                    if !cs.unresolved.isEmpty {
+                        Text(L("남는 사례: ") + cs.unresolved.prefix(3).map { "「\($0.question.prefix(40))」" }.joined(separator: " · "))
                             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
